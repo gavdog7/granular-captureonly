@@ -20,7 +20,10 @@ function createWindow() {
       contextIsolation: false,
       enableRemoteModule: true
     },
+    frame: false,
+    transparent: true,
     titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
     show: false
   });
 

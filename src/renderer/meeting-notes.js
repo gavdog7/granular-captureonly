@@ -437,31 +437,55 @@ async function loadAttachments() {
     try {
         const attachments = await ipcRenderer.invoke('get-meeting-attachments', currentMeetingId);
         
-        // For now, just log attachments - full implementation will come later
         console.log('Meeting attachments:', attachments);
+        
+        // Clear existing tiles
+        const attachmentsGrid = document.getElementById('attachmentsGrid');
+        attachmentsGrid.innerHTML = '';
+        
+        // Create tiles for existing attachments
+        for (const attachment of attachments) {
+            // Get file size from disk if available
+            const fileSize = await getAttachmentFileSize(attachment.filename);
+            createAttachmentTile(attachment.original_name, attachment.filename, fileSize);
+        }
         
     } catch (error) {
         console.error('Error loading attachments:', error);
     }
 }
 
-// Setup drag and drop for attachments
+// Get file size for existing attachment
+async function getAttachmentFileSize(filename) {
+    try {
+        const result = await ipcRenderer.invoke('get-attachment-info', currentMeetingId, filename);
+        return result.size || 0;
+    } catch (error) {
+        console.error('Error getting attachment size:', error);
+        return 0;
+    }
+}
+
+// Setup drag and drop for attachments (entire page)
 function setupDragAndDrop() {
-    const editor = document.getElementById('editor');
+    const container = document.querySelector('.container');
     
-    editor.addEventListener('dragover', (e) => {
+    container.addEventListener('dragover', (e) => {
         e.preventDefault();
-        editor.querySelector('.ql-editor').classList.add('drag-over');
+        container.classList.add('drag-over');
     });
     
-    editor.addEventListener('dragleave', (e) => {
+    container.addEventListener('dragleave', (e) => {
         e.preventDefault();
-        editor.querySelector('.ql-editor').classList.remove('drag-over');
+        // Only remove drag-over if we're leaving the container entirely
+        if (!container.contains(e.relatedTarget)) {
+            container.classList.remove('drag-over');
+        }
     });
     
-    editor.addEventListener('drop', (e) => {
+    container.addEventListener('drop', (e) => {
         e.preventDefault();
-        editor.querySelector('.ql-editor').classList.remove('drag-over');
+        container.classList.remove('drag-over');
         
         const files = Array.from(e.dataTransfer.files);
         handleFileUpload(files);
@@ -491,11 +515,8 @@ async function handleFileUpload(files) {
             if (result.success) {
                 console.log('File uploaded successfully:', result.filename);
                 
-                // Insert attachment reference into the editor
-                insertAttachmentIntoEditor(file.name, result.filename, file.size);
-                
-                // Reload attachments list
-                await loadAttachments();
+                // Create attachment tile
+                createAttachmentTile(file.name, result.filename, file.size);
             } else {
                 console.error('Failed to upload file:', file.name);
             }
@@ -510,35 +531,35 @@ async function handleFileUpload(files) {
     }
 }
 
-// Insert attachment reference into the editor
-function insertAttachmentIntoEditor(originalName, filename, size) {
+// Create attachment tile
+function createAttachmentTile(originalName, filename, size) {
     const formatSize = (bytes) => {
         if (bytes < 1024) return bytes + ' B';
         if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
         return Math.round(bytes / (1024 * 1024)) + ' MB';
     };
     
-    const attachmentHtml = `
-        <div class="attachment-item" data-filename="${filename}">
-            <span class="attachment-icon">📎</span>
-            <span class="attachment-name">${originalName}</span>
-            <span class="attachment-size">(${formatSize(size)})</span>
-            <div class="attachment-actions">
-                <button class="attachment-action download" onclick="downloadAttachment('${filename}', '${originalName}')">Download</button>
-                <button class="attachment-action remove" onclick="removeAttachment('${filename}')">Remove</button>
-            </div>
-        </div>
+    const attachmentsGrid = document.getElementById('attachmentsGrid');
+    
+    const tile = document.createElement('div');
+    tile.className = 'attachment-tile';
+    tile.dataset.filename = filename;
+    
+    tile.innerHTML = `
+        <div class="attachment-tile-name">${originalName}</div>
+        <div class="attachment-tile-size">${formatSize(size)}</div>
+        <button class="attachment-remove" onclick="removeAttachmentTile('${filename}')">×</button>
     `;
     
-    // Insert at current cursor position
-    const range = quill.getSelection();
-    if (range) {
-        quill.clipboard.dangerouslyPasteHTML(range.index, attachmentHtml);
-    } else {
-        // Insert at end if no selection
-        const length = quill.getLength();
-        quill.clipboard.dangerouslyPasteHTML(length, attachmentHtml);
-    }
+    // Click to open file
+    tile.addEventListener('click', (e) => {
+        if (e.target.classList.contains('attachment-remove')) {
+            return; // Don't open if clicking remove button
+        }
+        openAttachment(filename, originalName);
+    });
+    
+    attachmentsGrid.appendChild(tile);
 }
 
 // Hide loading overlay
@@ -612,34 +633,30 @@ function hideParticipantModal() {
 }
 
 // Attachment management functions
-async function downloadAttachment(filename, originalName) {
+async function openAttachment(filename, originalName) {
     try {
-        const result = await ipcRenderer.invoke('download-attachment', currentMeetingId, filename);
+        const result = await ipcRenderer.invoke('open-attachment', currentMeetingId, filename);
         if (result.success) {
-            console.log('File download initiated:', originalName);
+            console.log('File opened:', originalName);
         } else {
-            alert('Failed to download file');
+            alert('Failed to open file');
         }
     } catch (error) {
-        console.error('Error downloading attachment:', error);
-        alert('Error downloading file: ' + error.message);
+        console.error('Error opening attachment:', error);
+        alert('Error opening file: ' + error.message);
     }
 }
 
-async function removeAttachment(filename) {
-    if (!confirm('Are you sure you want to remove this attachment?')) return;
-    
+async function removeAttachmentTile(filename) {
     try {
         setSaveStatus('saving');
         const result = await ipcRenderer.invoke('remove-attachment', currentMeetingId, filename);
         if (result.success) {
-            // Remove from editor
-            const attachmentElement = document.querySelector(`[data-filename="${filename}"]`);
-            if (attachmentElement) {
-                attachmentElement.remove();
+            // Remove tile from UI
+            const tile = document.querySelector(`[data-filename="${filename}"]`);
+            if (tile) {
+                tile.remove();
             }
-            // Reload attachments list
-            await loadAttachments();
         } else {
             alert('Failed to remove attachment');
         }
@@ -653,5 +670,5 @@ async function removeAttachment(filename) {
 
 // Make functions available globally
 window.removeParticipant = removeParticipant;
-window.downloadAttachment = downloadAttachment;
-window.removeAttachment = removeAttachment;
+window.openAttachment = openAttachment;
+window.removeAttachmentTile = removeAttachmentTile;

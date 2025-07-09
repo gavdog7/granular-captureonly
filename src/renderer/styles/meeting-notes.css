@@ -235,10 +235,89 @@
     min-height: calc(100vh - 140px);
     border: none;
     box-shadow: none;
+    position: relative;
 }
 
 .notes-editor {
     min-height: calc(100vh - 140px);
+}
+
+/* Attachments Overlay */
+.attachments-overlay {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.attachments-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-start;
+    pointer-events: auto;
+}
+
+.attachment-tile {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 12px;
+    min-width: 120px;
+    max-width: 180px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.attachment-tile:hover {
+    background: #eeeeee;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.attachment-tile-name {
+    font-size: 13px;
+    color: #333;
+    font-weight: 500;
+    line-height: 1.3;
+    word-break: break-word;
+    margin-bottom: 4px;
+}
+
+.attachment-tile-size {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+}
+
+.attachment-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 16px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    font-size: 12px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: all 0.2s ease;
+}
+
+.attachment-tile:hover .attachment-remove {
+    display: flex;
+}
+
+.attachment-remove:hover {
+    background: rgba(255, 0, 0, 0.8);
 }
 
 /* Quill Editor Customizations */
@@ -333,61 +412,7 @@
     text-decoration: underline;
 }
 
-/* Attachment Styles */
-.attachment-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 8px;
-    padding: 8px 12px;
-    margin: 4px;
-    font-size: 14px;
-    color: #495057;
-}
-
-.attachment-icon {
-    font-size: 16px;
-}
-
-.attachment-name {
-    font-weight: 500;
-}
-
-.attachment-size {
-    color: #6c757d;
-    font-size: 12px;
-}
-
-.attachment-actions {
-    display: flex;
-    gap: 4px;
-}
-
-.attachment-action {
-    background: none;
-    border: none;
-    color: #6c757d;
-    cursor: pointer;
-    font-size: 12px;
-    padding: 2px 4px;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-}
-
-.attachment-action:hover {
-    background: #e9ecef;
-    color: #495057;
-}
-
-.attachment-action.download:hover {
-    color: #0066cc;
-}
-
-.attachment-action.remove:hover {
-    color: #dc3545;
-}
+/* Old attachment styles removed - now using tiles */
 
 /* Loading Overlay */
 .loading-overlay {
@@ -429,9 +454,25 @@
 }
 
 /* Drag and Drop Styles */
-.ql-editor.drag-over {
-    border: 2px dashed #8b5cf6;
+.container.drag-over {
     background: rgba(139, 92, 246, 0.05);
+    position: relative;
+}
+
+.container.drag-over::before {
+    content: 'Drop files anywhere to attach them';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(139, 92, 246, 0.9);
+    color: white;
+    padding: 20px 40px;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 500;
+    z-index: 1000;
+    pointer-events: none;
 }
 
 /* Smooth Transitions */

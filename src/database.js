@@ -321,7 +321,7 @@ class Database {
     }
   }
 
-  async downloadAttachment(meetingId, filename) {
+  async openAttachment(meetingId, filename) {
     try {
       // Get meeting info
       const meeting = await this.getMeetingById(meetingId);
@@ -348,13 +348,39 @@ class Database {
         throw new Error('File not found on disk');
       }
 
-      // Show file in finder/explorer
-      shell.showItemInFolder(filePath);
+      // Open file in default app
+      await shell.openPath(filePath);
 
       return { path: filePath, originalName: attachment.original_name };
     } catch (error) {
-      console.error('Error downloading attachment:', error);
+      console.error('Error opening attachment:', error);
       throw error;
+    }
+  }
+
+  async getAttachmentInfo(meetingId, filename) {
+    try {
+      // Get meeting info
+      const meeting = await this.getMeetingById(meetingId);
+      if (!meeting) {
+        throw new Error('Meeting not found');
+      }
+
+      // Find file path
+      const userDataPath = app.getPath('userData');
+      const today = dateOverride.today();
+      const filePath = path.join(userDataPath, 'assets', today, meeting.folder_name, 'attachments', filename);
+
+      if (!await fs.pathExists(filePath)) {
+        return { size: 0 };
+      }
+
+      // Get file stats
+      const stats = await fs.stat(filePath);
+      return { size: stats.size };
+    } catch (error) {
+      console.error('Error getting attachment info:', error);
+      return { size: 0 };
     }
   }
 

@@ -348,12 +348,22 @@ ipcMain.handle('upload-attachment', async (event, meetingId, fileInfo) => {
   }
 });
 
-ipcMain.handle('download-attachment', async (event, meetingId, filename) => {
+ipcMain.handle('open-attachment', async (event, meetingId, filename) => {
   try {
-    const result = await database.downloadAttachment(meetingId, filename);
+    const result = await database.openAttachment(meetingId, filename);
     return { success: true, path: result.path };
   } catch (error) {
-    console.error('Error downloading attachment:', error);
+    console.error('Error opening attachment:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-attachment-info', async (event, meetingId, filename) => {
+  try {
+    const result = await database.getAttachmentInfo(meetingId, filename);
+    return { size: result.size };
+  } catch (error) {
+    console.error('Error getting attachment info:', error);
     throw error;
   }
 });

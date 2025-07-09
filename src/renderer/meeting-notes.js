@@ -112,7 +112,7 @@ function initializeQuillEditor() {
                 }
             }
         },
-        placeholder: 'Start typing your meeting notes...'
+        placeholder: 'Write notes...'
     });
     
     // Set up auto-save on text change
@@ -304,21 +304,6 @@ function renderParticipants(participants) {
         participantsList.appendChild(participantEmail);
     });
     
-    // Show/hide stacked pills based on participant count
-    const stackedPill1 = participantsCollapsed.querySelector('.participants-pill-stacked');
-    const stackedPill2 = participantsCollapsed.querySelector('.participants-pill-stacked-2');
-    
-    if (participants.length > 1) {
-        stackedPill1.style.display = 'block';
-        if (participants.length > 2) {
-            stackedPill2.style.display = 'block';
-        } else {
-            stackedPill2.style.display = 'none';
-        }
-    } else {
-        stackedPill1.style.display = 'none';
-        stackedPill2.style.display = 'none';
-    }
 }
 
 // Add participant from inline input

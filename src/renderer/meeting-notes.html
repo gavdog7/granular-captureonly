@@ -13,26 +13,6 @@
         <header class="header">
             <button id="backButton" class="back-arrow">←</button>
             
-            <div class="meeting-details">
-                <div class="meeting-title-container">
-                    <input type="text" class="meeting-title-input" id="meetingTitleInput" style="display: none;" />
-                    <h1 class="meeting-title" id="meetingTitle">Loading...</h1>
-                </div>
-                <div class="meeting-time" id="meetingTime"></div>
-                <div class="meeting-participants">
-                    <div class="participants-collapsed" id="participantsCollapsed">
-                        <div class="participants-pill-stacked-2"></div>
-                        <div class="participants-pill-stacked"></div>
-                        <div class="participants-pill" id="participantsPill">0 participants</div>
-                        <div class="participants-list" id="participantsList"></div>
-                    </div>
-                    <div class="participant-input-pill" id="participantInputPill" style="display: none;">
-                        <input type="email" id="participantInlineInput" placeholder="Enter email" />
-                    </div>
-                    <button class="add-participant-btn" id="addParticipantBtn">+</button>
-                </div>
-            </div>
-            
             <div class="status-indicators">
                 <div id="saveIndicator" class="status-indicator" title="Save Status">
                     <div class="indicator-circle"></div>
@@ -43,6 +23,24 @@
             </div>
         </header>
 
+        <div class="content-wrapper">
+            <div class="meeting-details">
+            <div class="meeting-title-container">
+                <input type="text" class="meeting-title-input" id="meetingTitleInput" style="display: none;" />
+                <h1 class="meeting-title" id="meetingTitle">Loading...</h1>
+            </div>
+            <div class="meeting-participants">
+                <div class="participants-collapsed" id="participantsCollapsed">
+                    <div class="participants-pill" id="participantsPill">0 participants</div>
+                    <div class="participants-list" id="participantsList"></div>
+                </div>
+                <div class="participant-input-pill" id="participantInputPill" style="display: none;">
+                    <input type="email" id="participantInlineInput" placeholder="Enter email" />
+                </div>
+                <button class="add-participant-btn" id="addParticipantBtn">+</button>
+            </div>
+        </div>
+
         <div class="editor-container">
             <div id="editor" class="notes-editor"></div>
             <div class="attachments-overlay" id="attachmentsOverlay">
@@ -50,6 +48,7 @@
                     <!-- Attachment tiles will be added here -->
                 </div>
             </div>
+        </div>
         </div>
 
 

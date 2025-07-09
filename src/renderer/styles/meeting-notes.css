@@ -4,12 +4,14 @@
     max-width: none;
     margin: 0;
     padding: 0;
-    background: white;
+    background: #5c5c5c;
     min-height: 100vh;
     position: relative;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     display: flex;
     flex-direction: column;
+    border-radius: 10px;
+    overflow: hidden;
 }
 
 /* Header */
@@ -17,28 +19,29 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    height: 60px;
-    padding: 0 30px;
-    background: #f8f8f8;
-    border-bottom: 1px solid #e0e0e0;
+    height: 38px;
+    padding: 0 8px;
+    background: #5c5c5c;
+    border-bottom: none;
 }
 
 .back-arrow {
     background: none;
     border: none;
-    font-size: 20px;
+    font-size: 18px;
     cursor: pointer;
-    color: #666;
-    padding: 8px;
+    color: #a0a0a0;
+    padding: 6px 10px;
     border-radius: 4px;
     transition: all 0.2s ease;
     font-weight: normal;
-    margin-right: 20px;
+    margin-left: 68px;
+    line-height: 1;
 }
 
 .back-arrow:hover {
-    background: #f5f5f5;
-    color: #333;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ccc;
 }
 
 .status-indicators {
@@ -54,33 +57,35 @@
 }
 
 .indicator-circle {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
+    border: 1.5px solid;
+    background: transparent;
     transition: all 0.2s ease;
 }
 
 /* Save Status Indicator */
 #saveIndicator .indicator-circle {
-    background: #28a745; /* Default: saved */
+    border-color: #90d4a0; /* Pastel green */
 }
 
 #saveIndicator.saving .indicator-circle {
-    background: #ffc107;
+    border-color: #f0d090; /* Pastel yellow */
     animation: pulse 1s infinite;
 }
 
 #saveIndicator.error .indicator-circle {
-    background: #dc3545;
+    border-color: #e8a0a0; /* Pastel red */
 }
 
 /* Recording Status Indicator */
 #recordingIndicator .indicator-circle {
-    background: #6c757d; /* Default: not recording */
+    border-color: #a0a0a0; /* Default: not recording */
 }
 
 #recordingIndicator.recording .indicator-circle {
-    background: #dc3545;
+    border-color: #e8a0a0; /* Pastel red */
     animation: pulse 1s infinite;
 }
 
@@ -89,12 +94,22 @@
     50% { opacity: 0.5; }
 }
 
-/* Meeting Details in Header */
-.meeting-details {
+/* Content wrapper */
+.content-wrapper {
+    background: #f8fafb;
     flex: 1;
     display: flex;
-    align-items: center;
-    gap: 20px;
+    flex-direction: column;
+}
+
+/* Meeting Details - Now in Content */
+.meeting-details {
+    padding: 20px 20px 0;
+    background: transparent;
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .meeting-title-container {
@@ -102,12 +117,12 @@
 }
 
 .meeting-title {
-    font-size: 17px;
+    font-size: 24px;
     font-weight: 600;
     color: #1a1a1a;
-    margin: 0;
+    margin: 0 0 12px 0;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 0;
     border-radius: 4px;
     transition: background 0.2s ease;
 }
@@ -117,13 +132,13 @@
 }
 
 .meeting-title-input {
-    font-size: 17px;
+    font-size: 24px;
     font-weight: 600;
     color: #1a1a1a;
     border: 2px solid #8b5cf6;
     border-radius: 4px;
-    padding: 4px 8px;
-    background: white;
+    padding: 0;
+    background: transparent;
     width: 100%;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
@@ -142,6 +157,7 @@
     align-items: center;
     gap: 8px;
     position: relative;
+    margin-bottom: 20px;
 }
 
 .participants-collapsed {
@@ -150,43 +166,20 @@
 }
 
 .participants-pill {
-    background: #0066cc;
-    color: white;
-    padding: 6px 14px;
-    border-radius: 16px;
+    background: transparent;
+    color: #666;
+    padding: 4px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: normal;
     position: relative;
-    z-index: 3;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 102, 204, 0.2);
 }
 
 .participants-pill:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 3px 6px rgba(0, 102, 204, 0.3);
-}
-
-.participants-pill-stacked {
-    position: absolute;
-    top: 2px;
-    left: 3px;
-    width: 100%;
-    height: 100%;
-    background: #4d94ff;
-    border-radius: 16px;
-    z-index: 2;
-}
-
-.participants-pill-stacked-2 {
-    position: absolute;
-    top: 4px;
-    left: 6px;
-    width: 100%;
-    height: 100%;
-    background: #80b3ff;
-    border-radius: 16px;
-    z-index: 1;
+    border-color: #999;
+    background: rgba(0, 0, 0, 0.02);
 }
 
 .participants-list {
@@ -262,11 +255,11 @@
 }
 
 .add-participant-btn {
-    width: 28px;
     height: 28px;
-    border-radius: 50%;
-    background: #f0f0f0;
-    border: 1px solid #ddd;
+    padding: 0 12px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid #ccc;
     color: #666;
     font-size: 16px;
     cursor: pointer;
@@ -277,26 +270,38 @@
 }
 
 .add-participant-btn:hover {
-    background: #e0e0e0;
     border-color: #999;
+    background: rgba(0, 0, 0, 0.02);
 }
 
 
 /* Editor Container */
 .editor-container {
-    background: white;
-    min-height: calc(100vh - 60px);
+    background: #fffefe;
+    min-height: calc(100vh - 38px);
     border: none;
     box-shadow: none;
     position: relative;
     max-width: 900px;
     margin: 0 auto;
-    padding: 0 60px;
+    width: 100%;
+    padding: 0 20px;
     flex: 1;
+    box-sizing: border-box;
 }
 
 .notes-editor {
     min-height: calc(100vh - 60px);
+    background: #fffefe;
+    border: none;
+}
+
+.ql-container {
+    border: none !important;
+}
+
+.ql-container.ql-snow {
+    border: none !important;
 }
 
 /* Attachments Overlay */
@@ -380,36 +385,37 @@
 /* Quill Editor Customizations */
 .ql-toolbar {
     border: none !important;
-    background: white;
-    padding: 16px 0;
-    border-bottom: 1px solid #f0f0f0 !important;
+    background: #f5f5f5;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e8e8e8 !important;
+    margin: 0 -20px;
 }
 
 .ql-toolbar .ql-stroke {
-    stroke: #e0e0e0;
+    stroke: #788497 !important;
     transition: stroke 0.2s ease;
 }
 
 .ql-toolbar .ql-fill {
-    fill: #e0e0e0;
+    fill: #788497 !important;
     transition: fill 0.2s ease;
 }
 
 .ql-toolbar .ql-picker-label {
-    color: #e0e0e0;
+    color: #788497 !important;
     transition: color 0.2s ease;
 }
 
 .ql-toolbar button:hover .ql-stroke {
-    stroke: #000;
+    stroke: #666 !important;
 }
 
 .ql-toolbar button:hover .ql-fill {
-    fill: #000;
+    fill: #666 !important;
 }
 
 .ql-toolbar button:hover .ql-picker-label {
-    color: #000;
+    color: #666 !important;
 }
 
 .ql-toolbar button.ql-active .ql-stroke {
@@ -425,16 +431,19 @@
     font-size: 16px;
     line-height: 1.6;
     color: #1a1a1a;
-    padding: 30px 0;
+    padding: 20px 20px;
     border: none;
     min-height: calc(100vh - 200px);
+    background: #fffefe;
+    margin: 0 -20px;
 }
 
 .ql-editor.ql-blank::before {
     content: 'Write notes...';
-    color: #999;
+    color: #788497;
     font-style: normal;
     font-weight: normal;
+    left: 20px;
 }
 
 /* Custom Quill Styles */

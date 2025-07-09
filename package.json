@@ -5,7 +5,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron src/main.js",
-    "dev": "concurrently \"npm run watch\" \"electron src/main.js\"",
+    "dev": "npm run watch",
     "watch": "nodemon --watch src --exec \"electron src/main.js\"",
     "build": "electron-builder",
     "test": "jest",

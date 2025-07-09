@@ -1,37 +1,31 @@
-# Granular CaptureOnly - Final Implementation Plan
-*Revised based on senior developer feedback*
+# Granular CaptureOnly - Implementation Plan
 
 ## Project Overview
 Create an Electron application for capturing meeting data from Excel files and recording system audio during meetings with note-taking capabilities.
 
-## Critical Design Decisions (Based on Feedback)
+## Core Design Decisions
 
-### 1. Folder Naming Convention
-- **Original**: `YYYY-MM-DD-DayOfWeek`
-- **Revised**: `YYYY-MM-DD` (simpler, no redundancy)
-- **Rationale**: Day of week can be derived from date; simpler is better for file systems
+### 1. Folder Structure
+- Daily folders: `YYYY-MM-DD`
+- Meeting subfolders: Sanitized meeting titles
 
 ### 2. Meeting Title Sanitization
-- **Problem**: Meeting titles may contain illegal file system characters
-- **Solution**: Implement slug generation for folder names
-  - Convert to lowercase
-  - Replace spaces with hyphens
-  - Remove special characters (/\:*?"<>|)
-  - Handle duplicates with counters (meeting-title-1, meeting-title-2)
+- Convert to lowercase
+- Replace spaces with hyphens
+- Remove special characters (/\:*?"<>|)
+- Handle duplicates with counters (meeting-title-1, meeting-title-2)
 
 ### 3. Recording Control
-- **Original**: Auto-start recording on notes page entry
-- **Revised**: Recording starts by default but can be paused/stopped via the indicator
-- **Rationale**: Users need control over recording state
+- Recording starts automatically on notes page
+- Click status indicator to pause/resume
+- Recording stops when leaving notes page
 
-### 4. Excel File Location
-- **Original**: Automatically load Excel file (ambiguous location)
-- **Revised**: 
-  - First launch: Prompt user for file path
-  - Store path in electron-store
-  - Add menu option to change file path
+### 4. Excel File Configuration
+- First launch: File picker dialog
+- Path stored in electron-store
+- Menu option to change file location
 
-## Revised File Organization Strategy
+## File Organization
 
 ### Assets Directory Structure
 ```
@@ -55,7 +49,7 @@ assets/
 └── temp/
 ```
 
-### Folder Name Generation Algorithm
+### Folder Name Generation
 ```javascript
 function generateMeetingFolder(title, date, existingFolders) {
   // Sanitize title to create slug
@@ -81,9 +75,9 @@ function generateMeetingFolder(title, date, existingFolders) {
 }
 ```
 
-## Revised Data Model
+## Data Model
 
-### Meeting Data Structure (Simplified)
+### Meeting Data Structure
 ```javascript
 {
   id: string,                    // UUID
@@ -117,129 +111,74 @@ function generateMeetingFolder(title, date, existingFolders) {
 }
 ```
 
-## Technical Architecture Improvements
+## Technical Architecture
 
-### Audio Recording Strategy
-- **Stream to disk**: Write audio data every 5 seconds to prevent data loss
-- **Crash recovery**: On app restart, check for incomplete recordings
-- **Status monitoring**: Real-time audio level indicators
+### Audio Recording
+- Stream audio to disk every 5 seconds
+- Check for incomplete recordings on restart
+- Display real-time audio levels
 
 ### Data Persistence
 - Use `electron-store` for atomic writes
-- Implement write-ahead logging for critical operations
-- Regular auto-save for notes (every 30 seconds)
+- Auto-save notes every 30 seconds
+- Transaction logging for critical operations
 
-### Performance Optimization
-- Asynchronous Excel parsing with progress indicator
-- Use worker threads for large Excel files
-- Lazy load meeting data (pagination for long lists)
+### Performance
+- Asynchronous Excel parsing
+- Worker threads for large files
+- Pagination for meeting lists
 
-## Revised Milestone Implementation
+## Milestones
 
 ### Milestone 1: Excel Import & Meeting List Display
-**Enhanced Features**:
 - File path selection dialog on first launch
 - Progress bar for Excel parsing
 - Error handling for malformed Excel data
 - Pagination for large meeting lists
 - Settings menu for file path configuration
 
-**Success Criteria**:
-- [ ] File picker dialog works correctly
-- [ ] Excel parsing is non-blocking
-- [ ] Progress indicator shows during parsing
-- [ ] Error messages are user-friendly
-- [ ] Settings persist between sessions
-
 ### Milestone 2: Meeting Selection & Navigation
-**Enhanced Features**:
 - Meeting deduplication handling
 - Folder creation with sanitized names
 - Loading state during navigation
 - Breadcrumb navigation
 
-**Success Criteria**:
-- [ ] Duplicate meetings handled gracefully
-- [ ] Folder names are file-system safe
-- [ ] Navigation state is preserved
-- [ ] Back/forward navigation works
-
 ### Milestone 3: Notes Page Interface
-**Enhanced Features**:
 - Auto-save indicator
 - Markdown preview toggle
 - Participant validation (email format)
 - Keyboard shortcuts (Cmd+S to save)
 - Notes versioning
 
-**Success Criteria**:
-- [ ] Auto-save works reliably
-- [ ] Markdown preview renders correctly
-- [ ] Email validation provides feedback
-- [ ] Keyboard shortcuts are responsive
-- [ ] Previous versions can be recovered
-
 ### Milestone 4: Audio Recording with Control
-**Enhanced Features**:
 - Click indicator to pause/resume recording
 - Audio level meter
 - Recording duration display
 - Stream to disk every 5 seconds
 - Crash recovery for incomplete recordings
 
-**Success Criteria**:
-- [ ] Recording can be paused/resumed
-- [ ] Audio levels visible in real-time
-- [ ] Duration updates every second
-- [ ] No data loss on crash
-- [ ] Incomplete recordings are recoverable
-
 ### Milestone 5: File Attachment System
-**Enhanced Features**:
 - File type validation
 - Size limit warnings (configurable)
 - Thumbnail previews for images
 - Batch file operations
 - Duplicate file handling
 
-**Success Criteria**:
-- [ ] Invalid file types rejected with message
-- [ ] Large files prompt for confirmation
-- [ ] Image previews display correctly
-- [ ] Multiple files can be managed at once
-- [ ] Duplicate files renamed automatically
-
 ### Milestone 6: File Management & Persistence
-**Enhanced Features**:
 - Atomic file operations
 - Transaction log for operations
 - Cleanup of orphaned files
 - Storage usage monitoring
 - Export functionality
 
-**Success Criteria**:
-- [ ] File operations are atomic
-- [ ] Failed operations can be rolled back
-- [ ] Orphaned files detected and cleaned
-- [ ] Storage usage displayed to user
-- [ ] Meetings can be exported as ZIP
-
 ### Milestone 7: Resume Recording & History
-**Enhanced Features**:
 - Session timeline visualization
 - Merge recordings option
 - Recording session notes
 - Quick resume from system tray
 - Meeting search and filters
 
-**Success Criteria**:
-- [ ] Timeline shows all sessions clearly
-- [ ] Recordings can be merged into one file
-- [ ] Each session can have notes
-- [ ] System tray provides quick access
-- [ ] Search finds meetings by title/date/participant
-
-## Risk Mitigation Strategies
+## Risk Mitigation
 
 ### Data Corruption Prevention
 - Use `electron-store` with atomic writes
@@ -258,12 +197,6 @@ function generateMeetingFolder(title, date, existingFolders) {
 - Monitor system audio permissions
 - Fallback to microphone if system audio fails
 - Clear error messages for permission issues
-
-### Cross-Platform Considerations
-- Abstract file path operations
-- Test on different macOS versions
-- Handle different audio APIs gracefully
-- Ensure UI scales properly
 
 ## Testing Strategy
 
@@ -284,12 +217,6 @@ function generateMeetingFolder(title, date, existingFolders) {
 - Many concurrent recordings
 - Storage usage optimization
 - Memory leak detection
-
-### User Acceptance Tests
-- First-time user experience
-- Recording control intuitiveness
-- File organization clarity
-- Error recovery workflows
 
 ## Security Considerations
 
@@ -340,21 +267,3 @@ function generateMeetingFolder(title, date, existingFolders) {
 - 99.9% recording success rate
 - Automatic error recovery
 - Graceful degradation
-
-### Usability Targets
-- 3-click maximum for any operation
-- Clear visual feedback for all actions
-- Intuitive file organization
-- Comprehensive error messages
-
-## Conclusion
-
-This final implementation plan incorporates all senior developer feedback to create a more robust, user-friendly, and maintainable application. Key improvements include:
-
-1. **Simplified folder structure** with proper sanitization
-2. **User control** over recording state
-3. **Robust data model** without redundancy
-4. **Performance optimizations** for scale
-5. **Comprehensive error handling** and recovery
-
-Each milestone now includes enhanced features that address potential edge cases and improve the overall user experience. The plan prioritizes data integrity, performance, and usability while maintaining the original vision of a simple, effective meeting capture tool.

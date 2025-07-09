@@ -3,8 +3,10 @@ const { ipcRenderer } = require('electron');
 class MeetingApp {
     constructor() {
         this.meetings = [];
+        this.allMeetings = [];
         this.selectedMeeting = null;
         this.isLoading = false;
+        this.showingAll = false;
         this.init();
     }
 
@@ -31,6 +33,12 @@ class MeetingApp {
         this.setLoading(true);
         try {
             this.meetings = await ipcRenderer.invoke('get-todays-meetings');
+            this.showingAll = false;
+            
+            // Reset show more button
+            const showMoreBtn = document.getElementById('show-more-btn');
+            showMoreBtn.textContent = 'Show more ▼';
+            
             this.renderMeetings();
             this.updateStatus(`Loaded ${this.meetings.length} meetings for today`);
         } catch (error) {
@@ -47,8 +55,30 @@ class MeetingApp {
     }
 
     async toggleShowMore() {
-        console.log('Toggle show more...');
-        this.showSuccess('Show more feature will be implemented in future updates');
+        const showMoreBtn = document.getElementById('show-more-btn');
+        
+        try {
+            if (this.showingAll) {
+                // Switch back to filtered meetings
+                this.showingAll = false;
+                this.meetings = await ipcRenderer.invoke('get-todays-meetings');
+                showMoreBtn.textContent = 'Show more ▼';
+                console.log(`Showing filtered meetings: ${this.meetings.length}`);
+            } else {
+                // Show all meetings including filtered ones
+                this.showingAll = true;
+                this.allMeetings = await ipcRenderer.invoke('get-all-todays-meetings');
+                this.meetings = this.allMeetings;
+                showMoreBtn.textContent = 'Show less ▲';
+                console.log(`Showing all meetings: ${this.meetings.length}`);
+            }
+            
+            this.renderMeetings();
+            this.updateStatus(`Showing ${this.meetings.length} meetings for today`);
+        } catch (error) {
+            console.error('Error in toggleShowMore:', error);
+            this.showError('Failed to toggle meetings view: ' + error.message);
+        }
     }
 
     renderMeetings() {
@@ -198,7 +228,12 @@ class MeetingApp {
     }
 
     updateStatus(message) {
-        document.getElementById('status-text').textContent = message;
+        const statusElement = document.getElementById('status-text');
+        if (statusElement) {
+            statusElement.textContent = message;
+        } else {
+            console.log('Status:', message);
+        }
     }
 
     showError(message) {

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs-extra');
 const Database = require('./database');
 const MeetingLoader = require('./meeting-loader');
 const Store = require('electron-store');
@@ -175,6 +176,15 @@ ipcMain.handle('get-todays-meetings', async () => {
   }
 });
 
+ipcMain.handle('get-all-todays-meetings', async () => {
+  try {
+    return await meetingLoader.getAllTodaysMeetings();
+  } catch (error) {
+    console.error('Error getting all today\'s meetings:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('update-meeting-notes', async (event, meetingId, content) => {
   try {
     await database.updateMeetingNotes(meetingId, content);
@@ -200,6 +210,22 @@ ipcMain.handle('refresh-meetings', async () => {
     return { success: true };
   } catch (error) {
     console.error('Error refreshing meetings:', error);
+    throw error;
+  }
+});
+
+// Add new handler for manual Excel upload
+ipcMain.handle('upload-excel-file', async (event, filePath) => {
+  try {
+    // Copy the uploaded file to the expected location
+    const targetPath = path.join(__dirname, '../docs/Calendar import xlsx/Calendar management log.xlsx');
+    await fs.copy(filePath, targetPath);
+    
+    // Refresh meetings with incremental logic
+    await meetingLoader.refreshMeetingsFromExcel();
+    return { success: true };
+  } catch (error) {
+    console.error('Error uploading Excel file:', error);
     throw error;
   }
 });

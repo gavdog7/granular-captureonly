@@ -133,17 +133,40 @@ class Database {
   }
 
   async upsertMeeting(meeting) {
-    return this.run(`
-      INSERT OR REPLACE INTO meetings (title, folder_name, start_time, end_time, participants, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [
-      meeting.title,
-      meeting.folderName,
-      meeting.startTime,
-      meeting.endTime,
-      JSON.stringify(meeting.participants || []),
-      new Date().toISOString()
-    ]);
+    // Check if meeting already exists
+    const existing = await this.get(
+      'SELECT id, notes_content FROM meetings WHERE folder_name = ?',
+      [meeting.folderName]
+    );
+    
+    if (existing) {
+      // Update existing meeting but preserve notes
+      return this.run(`
+        UPDATE meetings 
+        SET title = ?, start_time = ?, end_time = ?, participants = ?, updated_at = ?
+        WHERE folder_name = ?
+      `, [
+        meeting.title,
+        meeting.startTime,
+        meeting.endTime,
+        JSON.stringify(meeting.participants || []),
+        new Date().toISOString(),
+        meeting.folderName
+      ]);
+    } else {
+      // Insert new meeting
+      return this.run(`
+        INSERT INTO meetings (title, folder_name, start_time, end_time, participants, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [
+        meeting.title,
+        meeting.folderName,
+        meeting.startTime,
+        meeting.endTime,
+        JSON.stringify(meeting.participants || []),
+        new Date().toISOString()
+      ]);
+    }
   }
 
   async updateMeetingNotes(meetingId, content) {

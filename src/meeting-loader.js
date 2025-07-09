@@ -11,6 +11,23 @@ class MeetingLoader {
   }
 
   async loadTodaysMeetings() {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Check if we already have meetings for today
+    const existingMeetings = await this.database.getTodaysMeetings();
+    
+    if (existingMeetings.length > 0) {
+      // We have existing meetings for today - use them without re-scraping
+      this.cachedMeetings = existingMeetings;
+      console.log(`Using existing ${existingMeetings.length} meetings for today (no re-scraping)`);
+      return existingMeetings;
+    }
+    
+    // No existing meetings - scrape from Excel (first time today)
+    return await this.loadMeetingsFromExcel();
+  }
+
+  async loadMeetingsFromExcel() {
     // Automatically use the calendar management log.xlsx file
     const excelFilePath = path.join(__dirname, '../docs/Calendar import xlsx/Calendar management log.xlsx');
     
@@ -28,14 +45,24 @@ class MeetingLoader {
         return meetingDate === today;
       });
 
-      for (const meeting of todaysMeetings) {
-        await this.database.upsertMeeting(meeting);
+      // For initial load, clear and insert all meetings
+      if (this.cachedMeetings.length === 0) {
+        for (const meeting of todaysMeetings) {
+          await this.database.upsertMeeting(meeting);
+        }
       }
 
       this.lastParsedTime = new Date();
       this.cachedMeetings = todaysMeetings;
       
-      console.log(`Loaded ${todaysMeetings.length} meetings for today`);
+      console.log(`Loaded ${todaysMeetings.length} meetings for today from Excel`);
+      
+      // Debug: Show which meetings are being loaded
+      console.log('🔍 Debug: Meetings being loaded:');
+      todaysMeetings.forEach((meeting, index) => {
+        console.log(`${index + 1}. ${meeting.title} (${new Date(meeting.startTime).toDateString()})`);
+      });
+      
       return todaysMeetings;
 
     } catch (error) {
@@ -44,7 +71,79 @@ class MeetingLoader {
     }
   }
 
-  async parseCalendarManagementLog(workbook) {
+  async refreshMeetingsFromExcel() {
+    const existingMeetings = await this.database.getTodaysMeetings();
+    const existingFolderNames = new Set(existingMeetings.map(m => m.folder_name));
+    
+    const newMeetings = await this.loadMeetingsFromExcel();
+    
+    // Only add meetings that don't already exist (based on folder_name)
+    const meetingsToAdd = newMeetings.filter(meeting => 
+      !existingFolderNames.has(meeting.folderName)
+    );
+    
+    if (meetingsToAdd.length > 0) {
+      for (const meeting of meetingsToAdd) {
+        await this.database.upsertMeeting(meeting);
+      }
+      console.log(`Added ${meetingsToAdd.length} new meetings, preserved ${existingMeetings.length} existing meetings`);
+    } else {
+      console.log('No new meetings to add');
+    }
+    
+    // Update cached meetings
+    this.cachedMeetings = await this.database.getTodaysMeetings();
+    
+    // Notify renderer of changes
+    if (global.mainWindow) {
+      global.mainWindow.webContents.send('meetings-refreshed');
+    }
+    
+    return this.cachedMeetings;
+  }
+
+  async getAllTodaysMeetings() {
+    // Get all meetings for today including filtered ones
+    const excelFilePath = path.join(__dirname, '../docs/Calendar import xlsx/Calendar management log.xlsx');
+    
+    if (!await fs.pathExists(excelFilePath)) {
+      throw new Error(`Calendar management log.xlsx not found at: ${excelFilePath}`);
+    }
+
+    try {
+      const workbook = XLSX.readFile(excelFilePath);
+      const meetings = await this.parseCalendarManagementLog(workbook, true); // Include filtered meetings
+      const today = new Date().toISOString().split('T')[0];
+      
+      const todaysMeetings = meetings.filter(meeting => {
+        const meetingDate = new Date(meeting.startTime).toISOString().split('T')[0];
+        return meetingDate === today;
+      });
+
+      // Convert Excel format to database format for renderer compatibility
+      const formattedMeetings = todaysMeetings.map((meeting, index) => ({
+        id: `excel-${index}`, // Temporary ID for Excel-only meetings
+        title: meeting.title,
+        folder_name: meeting.folderName,
+        start_time: meeting.startTime,
+        end_time: meeting.endTime,
+        participants: JSON.stringify(meeting.participants || []),
+        notes_content: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }));
+
+      console.log(`Found ${formattedMeetings.length} total meetings for today (including filtered)`);
+      
+      return formattedMeetings;
+
+    } catch (error) {
+      console.error('Error loading all meetings from Excel:', error);
+      throw new Error(`Failed to parse Excel file: ${error.message}`);
+    }
+  }
+
+  async parseCalendarManagementLog(workbook, includeFiltered = false) {
     const meetings = [];
     
     // Use the "6-Week Meeting Forecast" sheet specifically
@@ -73,7 +172,7 @@ class MeetingLoader {
         }
       });
       
-      const meeting = this.parseCalendarMeetingRow(meetingObj);
+      const meeting = this.parseCalendarMeetingRow(meetingObj, includeFiltered);
       if (meeting) {
         meetings.push(meeting);
       }
@@ -82,7 +181,7 @@ class MeetingLoader {
     return meetings;
   }
 
-  parseCalendarMeetingRow(meeting) {
+  parseCalendarMeetingRow(meeting, includeFiltered = false) {
     const title = meeting['Meeting Title'];
     const startDate = meeting['Start Date'];
     const startTime = meeting['Start Time'];
@@ -96,7 +195,8 @@ class MeetingLoader {
     }
 
     // Apply filter: exclude meetings where status is OWNER and participants is blank
-    if (status === 'OWNER' && (!participants || participants.trim() === '')) {
+    // Unless includeFiltered is true (for show more functionality)
+    if (!includeFiltered && status === 'OWNER' && (!participants || participants.trim() === '')) {
       return null;
     }
 
@@ -151,7 +251,13 @@ class MeetingLoader {
       // Excel date serial number - use standard Excel epoch (January 1, 1900)
       // Excel treats 1900 as a leap year (it's not), so we need to account for this
       const excelEpoch = new Date(1900, 0, 1);
-      return new Date(excelEpoch.getTime() + (excelDate - 1) * 86400 * 1000);
+      const parsedDate = new Date(excelEpoch.getTime() + (excelDate - 1) * 86400 * 1000);
+      
+      // Apply 1-day offset to fix the date discrepancy
+      const correctedDate = new Date(parsedDate);
+      correctedDate.setDate(correctedDate.getDate() - 1);
+      
+      return correctedDate;
     }
     
     if (typeof excelDate === 'string') {
@@ -284,10 +390,7 @@ class MeetingLoader {
 
   async refreshMeetings() {
     try {
-      await this.loadTodaysMeetings();
-      if (global.mainWindow) {
-        global.mainWindow.webContents.send('meetings-refreshed');
-      }
+      await this.refreshMeetingsFromExcel();
     } catch (error) {
       console.error('Error refreshing meetings:', error);
       throw error;

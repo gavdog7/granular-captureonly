@@ -167,19 +167,14 @@ function initializeEventListeners() {
         await ensureNotesAreSaved();
     });
     
-    // Add participant
-    document.getElementById('addParticipantBtn').addEventListener('click', addParticipant);
-    document.getElementById('participantInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            addParticipant();
-        }
-    });
+    // Legacy participant input handling (now handled in modal)
+    // These listeners are now in the modal setup above
     
     // Validate participant input
     document.getElementById('participantInput').addEventListener('input', validateParticipantInput);
     
-    // Edit title functionality
-    document.getElementById('editTitleBtn').addEventListener('click', startEditingTitle);
+    // Edit title functionality - click title to edit
+    document.getElementById('meetingTitle').addEventListener('click', startEditingTitle);
     document.getElementById('meetingTitleInput').addEventListener('blur', saveTitle);
     document.getElementById('meetingTitleInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
@@ -187,6 +182,23 @@ function initializeEventListeners() {
         }
         if (e.key === 'Escape') {
             cancelEditTitle();
+        }
+    });
+    
+    // Participant modal functionality
+    document.getElementById('addParticipantBtn').addEventListener('click', showParticipantModal);
+    document.getElementById('participantModal').addEventListener('click', (e) => {
+        if (e.target.id === 'participantModal') {
+            hideParticipantModal();
+        }
+    });
+    document.getElementById('participantInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            addParticipant();
+            hideParticipantModal();
+        }
+        if (e.key === 'Escape') {
+            hideParticipantModal();
         }
     });
 }
@@ -316,7 +328,6 @@ async function addParticipant() {
         setSaveStatus('saving');
         await ipcRenderer.invoke('update-meeting-participants', currentMeetingId, participants);
         renderParticipants(participants);
-        input.value = '';
         setSaveStatus('saved');
         
     } catch (error) {
@@ -546,12 +557,10 @@ function showLoadingOverlay() {
 function startEditingTitle() {
     const titleElement = document.getElementById('meetingTitle');
     const inputElement = document.getElementById('meetingTitleInput');
-    const editButton = document.getElementById('editTitleBtn');
     
     inputElement.value = titleElement.textContent;
     titleElement.style.display = 'none';
     inputElement.style.display = 'block';
-    editButton.style.display = 'none';
     inputElement.focus();
     inputElement.select();
 }
@@ -559,7 +568,6 @@ function startEditingTitle() {
 async function saveTitle() {
     const titleElement = document.getElementById('meetingTitle');
     const inputElement = document.getElementById('meetingTitleInput');
-    const editButton = document.getElementById('editTitleBtn');
     
     const newTitle = inputElement.value.trim();
     if (newTitle && newTitle !== titleElement.textContent) {
@@ -577,18 +585,30 @@ async function saveTitle() {
     // Hide input, show title
     inputElement.style.display = 'none';
     titleElement.style.display = 'block';
-    editButton.style.display = 'block';
 }
 
 function cancelEditTitle() {
     const titleElement = document.getElementById('meetingTitle');
     const inputElement = document.getElementById('meetingTitleInput');
-    const editButton = document.getElementById('editTitleBtn');
     
     // Hide input, show title without saving
     inputElement.style.display = 'none';
     titleElement.style.display = 'block';
-    editButton.style.display = 'block';
+}
+
+// Participant modal functions
+function showParticipantModal() {
+    const modal = document.getElementById('participantModal');
+    const input = document.getElementById('participantInput');
+    
+    modal.style.display = 'flex';
+    input.value = '';
+    input.focus();
+}
+
+function hideParticipantModal() {
+    const modal = document.getElementById('participantModal');
+    modal.style.display = 'none';
 }
 
 // Attachment management functions

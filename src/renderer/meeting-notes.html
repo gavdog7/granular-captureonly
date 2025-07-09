@@ -11,10 +11,19 @@
 <body>
     <div class="container">
         <header class="header">
-            <button id="backButton" class="back-button">
-                <span class="back-arrow">←</span>
-                <span class="back-text">Back</span>
-            </button>
+            <button id="backButton" class="back-arrow">←</button>
+            
+            <div class="meeting-details">
+                <div class="meeting-title-container">
+                    <input type="text" class="meeting-title-input" id="meetingTitleInput" style="display: none;" />
+                    <h1 class="meeting-title" id="meetingTitle">Loading...</h1>
+                </div>
+                <div class="meeting-time" id="meetingTime"></div>
+                <div class="meeting-participants">
+                    <div class="participants-list" id="participantsList"></div>
+                    <button class="add-participant-btn" id="addParticipantBtn">+</button>
+                </div>
+            </div>
             
             <div class="status-indicators">
                 <div id="saveIndicator" class="status-indicator" title="Save Status">
@@ -26,24 +35,15 @@
             </div>
         </header>
 
-        <div class="meeting-details">
-            <div class="meeting-title-container">
-                <input type="text" class="meeting-title-input" id="meetingTitleInput" style="display: none;" />
-                <h2 class="meeting-title" id="meetingTitle">Loading...</h2>
-                <button class="edit-title-btn" id="editTitleBtn" title="Edit title">✏️</button>
-            </div>
-            <div class="meeting-time" id="meetingTime"></div>
-            <div class="meeting-participants">
-                <div class="participants-list" id="participantsList"></div>
-                <div class="add-participant">
-                    <input type="email" id="participantInput" placeholder="Add participant (email)" />
-                    <button id="addParticipantBtn">Add</button>
-                </div>
-            </div>
-        </div>
-
         <div class="editor-container">
             <div id="editor" class="notes-editor"></div>
+        </div>
+
+        <!-- Participant input modal -->
+        <div class="participant-modal" id="participantModal" style="display: none;">
+            <div class="participant-modal-content">
+                <input type="email" id="participantInput" placeholder="Enter email address" />
+            </div>
         </div>
 
         <div class="loading-overlay" id="loadingOverlay">

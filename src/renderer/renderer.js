@@ -24,6 +24,9 @@ class MeetingApp {
         const showMoreBtn = document.getElementById('show-more-btn');
         showMoreBtn.addEventListener('click', () => this.toggleShowMore());
 
+        const excelUploadBtn = document.getElementById('excel-upload-btn');
+        excelUploadBtn.addEventListener('click', () => this.uploadExcelFile());
+
         ipcRenderer.on('meetings-refreshed', () => {
             this.loadMeetings();
         });
@@ -78,6 +81,58 @@ class MeetingApp {
         } catch (error) {
             console.error('Error in toggleShowMore:', error);
             this.showError('Failed to toggle meetings view: ' + error.message);
+        }
+    }
+
+    async uploadExcelFile() {
+        try {
+            // Create a file input element
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.xlsx,.xls';
+            fileInput.style.display = 'none';
+            
+            // Add event listener for file selection
+            fileInput.addEventListener('change', async (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    await this.processExcelFile(file);
+                }
+                // Clean up
+                document.body.removeChild(fileInput);
+            });
+            
+            // Add to DOM and trigger click
+            document.body.appendChild(fileInput);
+            fileInput.click();
+            
+        } catch (error) {
+            console.error('Error initiating Excel upload:', error);
+            this.showError('Failed to open file picker: ' + error.message);
+        }
+    }
+
+    async processExcelFile(file) {
+        try {
+            console.log(`Processing Excel file: ${file.name}`);
+            this.showSuccess(`Processing ${file.name}...`);
+            
+            // Send file path to main process
+            const result = await ipcRenderer.invoke('upload-excel-file', file.path);
+            
+            if (result.success) {
+                this.showSuccess('Excel file processed successfully! Meetings updated.');
+                console.log('Excel file processed successfully');
+                
+                // Reload meetings to show updated data
+                await this.loadMeetings();
+            } else {
+                this.showError('Failed to process Excel file');
+            }
+            
+        } catch (error) {
+            console.error('Error processing Excel file:', error);
+            this.showError('Failed to process Excel file: ' + error.message);
         }
     }
 

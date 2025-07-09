@@ -72,6 +72,37 @@
             color: #1d1d1f;
         }
 
+        .header-buttons {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .excel-upload-btn {
+            background: #f6f6f6;
+            border: 1px solid #d1d1d6;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            color: #424245;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 40px;
+            height: 36px;
+        }
+
+        .excel-upload-btn:hover {
+            background: #e5e5e7;
+            transform: translateY(-1px);
+        }
+
+        .excel-upload-btn:active {
+            transform: translateY(0);
+        }
+
         .show-more-btn {
             background: #f6f6f6;
             border: 1px solid #d1d1d6;
@@ -248,9 +279,14 @@
         <div class="content">
             <div class="section-header">
                 <h1 class="section-title">Coming up</h1>
-                <button class="show-more-btn" id="show-more-btn">
-                    Show more ▼
-                </button>
+                <div class="header-buttons">
+                    <button class="excel-upload-btn" id="excel-upload-btn" title="Upload Excel file">
+                        📊
+                    </button>
+                    <button class="show-more-btn" id="show-more-btn">
+                        Show more ▼
+                    </button>
+                </div>
             </div>
 
             <div class="meetings-container" id="meetings-container">

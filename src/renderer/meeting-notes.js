@@ -207,6 +207,8 @@ async function loadMeetingData() {
         // Load notes content
         console.log('Loading notes for meeting:', meeting.id, 'Notes content:', meeting.notes_content);
         if (meeting.notes_content) {
+            // Set loading to true temporarily while setting content
+            const wasLoading = isLoading;
             isLoading = true;
             try {
                 const parsedContent = JSON.parse(meeting.notes_content);
@@ -223,7 +225,8 @@ async function loadMeetingData() {
                 // Try to parse as plain text if it's not JSON
                 quill.setText(meeting.notes_content);
             }
-            isLoading = false;
+            // Restore the loading state
+            isLoading = wasLoading;
         } else {
             console.log('No notes content found for meeting', meeting.id);
         }
@@ -234,9 +237,14 @@ async function loadMeetingData() {
         // Set initial save status
         setSaveStatus('saved');
         
+        // IMPORTANT: Set isLoading to false after all data is loaded
+        isLoading = false;
+        console.log('isLoading set to false - auto-save now enabled');
+        
     } catch (error) {
         console.error('Error loading meeting data:', error);
         setSaveStatus('error');
+        isLoading = false; // Also set to false on error
     }
 }
 

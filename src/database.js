@@ -234,6 +234,27 @@ class Database {
     );
   }
 
+  async getMeetingById(meetingId) {
+    return this.get(
+      'SELECT * FROM meetings WHERE id = ?',
+      [meetingId]
+    );
+  }
+
+  async updateMeetingParticipants(meetingId, participants) {
+    return this.run(
+      'UPDATE meetings SET participants = ?, updated_at = ? WHERE id = ?',
+      [JSON.stringify(participants), new Date().toISOString(), meetingId]
+    );
+  }
+
+  async getMeetingAttachments(meetingId) {
+    return this.all(
+      'SELECT * FROM attachments WHERE meeting_id = ?',
+      [meetingId]
+    );
+  }
+
   async close() {
     return new Promise((resolve) => {
       if (this.db) {

@@ -274,4 +274,33 @@ ipcMain.handle('upload-excel-file', async (event, filePath) => {
   }
 });
 
+// Meeting notes IPC handlers
+ipcMain.handle('get-meeting-by-id', async (event, meetingId) => {
+  try {
+    return await database.getMeetingById(meetingId);
+  } catch (error) {
+    console.error('Error getting meeting by ID:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('update-meeting-participants', async (event, meetingId, participants) => {
+  try {
+    await database.updateMeetingParticipants(meetingId, participants);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating meeting participants:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-meeting-attachments', async (event, meetingId) => {
+  try {
+    return await database.getMeetingAttachments(meetingId);
+  } catch (error) {
+    console.error('Error getting meeting attachments:', error);
+    throw error;
+  }
+});
+
 module.exports = { database, meetingLoader, store };

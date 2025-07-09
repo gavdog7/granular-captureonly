@@ -55,7 +55,7 @@ class MeetingApp {
 
     async createNewNote() {
         console.log('Creating new note...');
-        this.showSuccess('New note feature will be implemented in Milestone 2');
+        this.showSuccess('Click on any meeting below to open its notes editor');
     }
 
     async toggleShowMore() {
@@ -240,16 +240,8 @@ class MeetingApp {
     }
 
     selectMeeting(meeting) {
-        document.querySelectorAll('.meeting-item').forEach(item => {
-            item.classList.remove('active');
-        });
-        
-        const meetingElement = document.querySelector(`[data-meeting-id="${meeting.id}"]`);
-        if (meetingElement) {
-            meetingElement.classList.add('active');
-        }
-        
-        this.selectedMeeting = meeting;
+        // Navigate to meeting notes page
+        window.location.href = `meeting-notes.html?meetingId=${meeting.id}`;
     }
 
     async openMeetingNotes(meetingId) {

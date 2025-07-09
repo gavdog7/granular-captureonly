@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Notes - Granular CaptureOnly</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/meeting-notes.css">
+    <link href="../../node_modules/quill/dist/quill.snow.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <button id="backButton" class="back-button">
+                <span class="back-arrow">←</span>
+                <span class="back-text">Back</span>
+            </button>
+            
+            <div class="status-indicators">
+                <div id="saveIndicator" class="status-indicator" title="Save Status">
+                    <div class="indicator-circle"></div>
+                </div>
+                <div id="recordingIndicator" class="status-indicator" title="Recording Status">
+                    <div class="indicator-circle"></div>
+                </div>
+            </div>
+        </header>
+
+        <div class="meeting-details">
+            <div class="meeting-title" id="meetingTitle">Loading...</div>
+            <div class="meeting-time" id="meetingTime"></div>
+            <div class="meeting-participants">
+                <div class="participants-list" id="participantsList"></div>
+                <div class="add-participant">
+                    <input type="email" id="participantInput" placeholder="Add participant (email)" />
+                    <button id="addParticipantBtn">Add</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="editor-container">
+            <div id="editor" class="notes-editor"></div>
+        </div>
+
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Loading meeting notes...</div>
+        </div>
+    </div>
+
+    <script src="../../node_modules/quill/dist/quill.js"></script>
+    <script src="meeting-notes.js"></script>
+</body>
+</html>

@@ -1,0 +1,440 @@
+/* Meeting Notes Page Styles */
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+    background: white;
+    min-height: 100vh;
+    position: relative;
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.back-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    color: #495057;
+}
+
+.back-button:hover {
+    background: #e9ecef;
+    border-color: #dee2e6;
+}
+
+.back-arrow {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.status-indicators {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.indicator-circle {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+/* Save Status Indicator */
+#saveIndicator .indicator-circle {
+    background: #28a745; /* Default: saved */
+}
+
+#saveIndicator.saving .indicator-circle {
+    background: #ffc107;
+    animation: pulse 1s infinite;
+}
+
+#saveIndicator.error .indicator-circle {
+    background: #dc3545;
+}
+
+/* Recording Status Indicator */
+#recordingIndicator .indicator-circle {
+    background: #6c757d; /* Default: not recording */
+}
+
+#recordingIndicator.recording .indicator-circle {
+    background: #dc3545;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Meeting Details */
+.meeting-details {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 30px;
+    border: 1px solid #e9ecef;
+}
+
+.meeting-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #212529;
+    margin-bottom: 8px;
+}
+
+.meeting-time {
+    font-size: 16px;
+    color: #6c757d;
+    margin-bottom: 16px;
+}
+
+.meeting-participants {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.participants-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.participant-tag {
+    background: #e7f3ff;
+    color: #0066cc;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.participant-remove {
+    background: none;
+    border: none;
+    color: #0066cc;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+    opacity: 0.7;
+}
+
+.participant-remove:hover {
+    opacity: 1;
+}
+
+.add-participant {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+#participantInput {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    font-size: 14px;
+    max-width: 250px;
+}
+
+#addParticipantBtn {
+    padding: 8px 16px;
+    background: #8b5cf6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+#addParticipantBtn:hover {
+    background: #7c3aed;
+}
+
+#addParticipantBtn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+}
+
+/* Editor Container */
+.editor-container {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e9ecef;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    min-height: 500px;
+}
+
+.notes-editor {
+    min-height: 500px;
+}
+
+/* Quill Editor Customizations */
+.ql-toolbar {
+    border-bottom: 1px solid #e9ecef !important;
+    background: #f8f9fa;
+}
+
+.ql-toolbar .ql-stroke {
+    stroke: #495057;
+}
+
+.ql-toolbar .ql-fill {
+    fill: #495057;
+}
+
+.ql-toolbar .ql-picker-label {
+    color: #495057;
+}
+
+.ql-editor {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: #212529;
+    padding: 24px;
+}
+
+.ql-editor::before {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.ql-editor.ql-blank::before {
+    content: attr(data-placeholder);
+}
+
+/* Custom Quill Styles */
+.ql-editor h1, .ql-editor h2, .ql-editor h3 {
+    color: #212529;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+
+.ql-editor blockquote {
+    border-left: 4px solid #8b5cf6;
+    background: #f8f9fa;
+    padding: 16px;
+    margin: 16px 0;
+    border-radius: 0 8px 8px 0;
+}
+
+.ql-editor ul, .ql-editor ol {
+    padding-left: 24px;
+}
+
+.ql-editor li {
+    margin-bottom: 4px;
+}
+
+.ql-editor a {
+    color: #8b5cf6;
+    text-decoration: none;
+}
+
+.ql-editor a:hover {
+    text-decoration: underline;
+}
+
+/* Attachment Styles */
+.attachment-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px;
+    font-size: 14px;
+    color: #495057;
+}
+
+.attachment-icon {
+    font-size: 16px;
+}
+
+.attachment-name {
+    font-weight: 500;
+}
+
+.attachment-size {
+    color: #6c757d;
+    font-size: 12px;
+}
+
+.attachment-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.attachment-action {
+    background: none;
+    border: none;
+    color: #6c757d;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.attachment-action:hover {
+    background: #e9ecef;
+    color: #495057;
+}
+
+.attachment-action.download:hover {
+    color: #0066cc;
+}
+
+.attachment-action.remove:hover {
+    color: #dc3545;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    z-index: 1000;
+}
+
+.loading-overlay.hidden {
+    display: none;
+}
+
+.loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #e9ecef;
+    border-top: 3px solid #8b5cf6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-text {
+    font-size: 16px;
+    color: #6c757d;
+}
+
+/* Drag and Drop Styles */
+.ql-editor.drag-over {
+    border: 2px dashed #8b5cf6;
+    background: rgba(139, 92, 246, 0.05);
+}
+
+.drag-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(139, 92, 246, 0.1);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 18px;
+    color: #8b5cf6;
+    font-weight: 500;
+    z-index: 100;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .container {
+        padding: 16px;
+    }
+    
+    .header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+    }
+    
+    .status-indicators {
+        align-self: flex-end;
+    }
+    
+    .meeting-details {
+        padding: 16px;
+    }
+    
+    .add-participant {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    #participantInput {
+        max-width: none;
+    }
+    
+    .ql-editor {
+        padding: 16px;
+    }
+}
+
+/* Smooth Transitions */
+.container {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Focus Styles */
+.back-button:focus,
+#participantInput:focus,
+#addParticipantBtn:focus {
+    outline: 2px solid #8b5cf6;
+    outline-offset: 2px;
+}
+
+/* Selection Styles */
+::selection {
+    background: rgba(139, 92, 246, 0.2);
+}

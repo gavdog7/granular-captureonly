@@ -295,6 +295,16 @@ ipcMain.handle('update-meeting-participants', async (event, meetingId, participa
   }
 });
 
+ipcMain.handle('update-meeting-title', async (event, meetingId, title) => {
+  try {
+    await database.updateMeetingTitle(meetingId, title);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating meeting title:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('get-meeting-attachments', async (event, meetingId) => {
   try {
     return await database.getMeetingAttachments(meetingId);
@@ -324,6 +334,37 @@ ipcMain.on('update-meeting-notes-sync', (event, meetingId, content) => {
   } catch (error) {
     console.error('Error updating meeting notes synchronously:', error);
     event.returnValue = { success: false, error: error.message };
+  }
+});
+
+// Attachment management IPC handlers
+ipcMain.handle('upload-attachment', async (event, meetingId, fileInfo) => {
+  try {
+    const result = await database.uploadAttachment(meetingId, fileInfo);
+    return { success: true, filename: result.filename };
+  } catch (error) {
+    console.error('Error uploading attachment:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('download-attachment', async (event, meetingId, filename) => {
+  try {
+    const result = await database.downloadAttachment(meetingId, filename);
+    return { success: true, path: result.path };
+  } catch (error) {
+    console.error('Error downloading attachment:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('remove-attachment', async (event, meetingId, filename) => {
+  try {
+    await database.removeAttachment(meetingId, filename);
+    return { success: true };
+  } catch (error) {
+    console.error('Error removing attachment:', error);
+    throw error;
   }
 });
 

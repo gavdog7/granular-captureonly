@@ -27,7 +27,11 @@
         </header>
 
         <div class="meeting-details">
-            <div class="meeting-title" id="meetingTitle">Loading...</div>
+            <div class="meeting-title-container">
+                <input type="text" class="meeting-title-input" id="meetingTitleInput" style="display: none;" />
+                <h2 class="meeting-title" id="meetingTitle">Loading...</h2>
+                <button class="edit-title-btn" id="editTitleBtn" title="Edit title">✏️</button>
+            </div>
             <div class="meeting-time" id="meetingTime"></div>
             <div class="meeting-participants">
                 <div class="participants-list" id="participantsList"></div>

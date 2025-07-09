@@ -1,7 +1,7 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs-extra');
-const { app } = require('electron');
+const { app, shell } = require('electron');
 const { dateOverride } = require('./date-override');
 
 class Database {
@@ -248,6 +248,13 @@ class Database {
     );
   }
 
+  async updateMeetingTitle(meetingId, title) {
+    return this.run(
+      'UPDATE meetings SET title = ?, updated_at = ? WHERE id = ?',
+      [title, new Date().toISOString(), meetingId]
+    );
+  }
+
   async getMeetingAttachments(meetingId) {
     return this.all(
       'SELECT * FROM attachments WHERE meeting_id = ?',
@@ -275,6 +282,110 @@ class Database {
       'UPDATE meetings SET notes_content = ?, updated_at = ? WHERE id = ?',
       [content, new Date().toISOString(), meetingId]
     );
+  }
+
+  async uploadAttachment(meetingId, fileInfo) {
+    try {
+      // Get meeting info to determine folder structure
+      const meeting = await this.getMeetingById(meetingId);
+      if (!meeting) {
+        throw new Error('Meeting not found');
+      }
+
+      // Create attachment directory structure
+      const userDataPath = app.getPath('userData');
+      const today = dateOverride.today();
+      const attachmentsDir = path.join(userDataPath, 'assets', today, meeting.folder_name, 'attachments');
+      await fs.ensureDir(attachmentsDir);
+
+      // Generate unique filename
+      const timestamp = new Date().getTime();
+      const ext = path.extname(fileInfo.name);
+      const baseName = path.basename(fileInfo.name, ext);
+      const uniqueFilename = `${baseName}-${timestamp}${ext}`;
+      const targetPath = path.join(attachmentsDir, uniqueFilename);
+
+      // Copy file to attachments directory
+      await fs.copy(fileInfo.path, targetPath);
+
+      // Add to database
+      await this.run(
+        'INSERT INTO attachments (meeting_id, filename, original_name) VALUES (?, ?, ?)',
+        [meetingId, uniqueFilename, fileInfo.name]
+      );
+
+      return { filename: uniqueFilename, path: targetPath };
+    } catch (error) {
+      console.error('Error uploading attachment:', error);
+      throw error;
+    }
+  }
+
+  async downloadAttachment(meetingId, filename) {
+    try {
+      // Get meeting info
+      const meeting = await this.getMeetingById(meetingId);
+      if (!meeting) {
+        throw new Error('Meeting not found');
+      }
+
+      // Get attachment info
+      const attachment = await this.get(
+        'SELECT * FROM attachments WHERE meeting_id = ? AND filename = ?',
+        [meetingId, filename]
+      );
+
+      if (!attachment) {
+        throw new Error('Attachment not found');
+      }
+
+      // Find file path
+      const userDataPath = app.getPath('userData');
+      const today = dateOverride.today();
+      const filePath = path.join(userDataPath, 'assets', today, meeting.folder_name, 'attachments', filename);
+
+      if (!await fs.pathExists(filePath)) {
+        throw new Error('File not found on disk');
+      }
+
+      // Show file in finder/explorer
+      shell.showItemInFolder(filePath);
+
+      return { path: filePath, originalName: attachment.original_name };
+    } catch (error) {
+      console.error('Error downloading attachment:', error);
+      throw error;
+    }
+  }
+
+  async removeAttachment(meetingId, filename) {
+    try {
+      // Get meeting info
+      const meeting = await this.getMeetingById(meetingId);
+      if (!meeting) {
+        throw new Error('Meeting not found');
+      }
+
+      // Remove from database
+      await this.run(
+        'DELETE FROM attachments WHERE meeting_id = ? AND filename = ?',
+        [meetingId, filename]
+      );
+
+      // Remove file from disk
+      const userDataPath = app.getPath('userData');
+      const today = dateOverride.today();
+      const filePath = path.join(userDataPath, 'assets', today, meeting.folder_name, 'attachments', filename);
+
+      if (await fs.pathExists(filePath)) {
+        await fs.remove(filePath);
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error removing attachment:', error);
+      throw error;
+    }
   }
 
   async close() {

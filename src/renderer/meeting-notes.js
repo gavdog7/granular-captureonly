@@ -177,6 +177,18 @@ function initializeEventListeners() {
     
     // Validate participant input
     document.getElementById('participantInput').addEventListener('input', validateParticipantInput);
+    
+    // Edit title functionality
+    document.getElementById('editTitleBtn').addEventListener('click', startEditingTitle);
+    document.getElementById('meetingTitleInput').addEventListener('blur', saveTitle);
+    document.getElementById('meetingTitleInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            saveTitle();
+        }
+        if (e.key === 'Escape') {
+            cancelEditTitle();
+        }
+    });
 }
 
 // Load meeting data from database
@@ -445,11 +457,77 @@ function setupDragAndDrop() {
     });
 }
 
-// Handle file upload (placeholder for future implementation)
-function handleFileUpload(files) {
+// Handle file upload
+async function handleFileUpload(files) {
     console.log('Files dropped:', files);
-    // TODO: Implement file upload functionality
-    // This will be implemented when we add the attachment system
+    
+    if (!files || files.length === 0) return;
+    
+    setSaveStatus('saving');
+    
+    try {
+        for (const file of files) {
+            console.log('Uploading file:', file.name, 'Size:', file.size);
+            
+            // Create attachment record in database
+            const result = await ipcRenderer.invoke('upload-attachment', currentMeetingId, {
+                name: file.name,
+                path: file.path,
+                size: file.size,
+                type: file.type
+            });
+            
+            if (result.success) {
+                console.log('File uploaded successfully:', result.filename);
+                
+                // Insert attachment reference into the editor
+                insertAttachmentIntoEditor(file.name, result.filename, file.size);
+                
+                // Reload attachments list
+                await loadAttachments();
+            } else {
+                console.error('Failed to upload file:', file.name);
+            }
+        }
+        
+        setSaveStatus('saved');
+        
+    } catch (error) {
+        console.error('Error uploading files:', error);
+        setSaveStatus('error');
+        alert('Error uploading files: ' + error.message);
+    }
+}
+
+// Insert attachment reference into the editor
+function insertAttachmentIntoEditor(originalName, filename, size) {
+    const formatSize = (bytes) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+        return Math.round(bytes / (1024 * 1024)) + ' MB';
+    };
+    
+    const attachmentHtml = `
+        <div class="attachment-item" data-filename="${filename}">
+            <span class="attachment-icon">📎</span>
+            <span class="attachment-name">${originalName}</span>
+            <span class="attachment-size">(${formatSize(size)})</span>
+            <div class="attachment-actions">
+                <button class="attachment-action download" onclick="downloadAttachment('${filename}', '${originalName}')">Download</button>
+                <button class="attachment-action remove" onclick="removeAttachment('${filename}')">Remove</button>
+            </div>
+        </div>
+    `;
+    
+    // Insert at current cursor position
+    const range = quill.getSelection();
+    if (range) {
+        quill.clipboard.dangerouslyPasteHTML(range.index, attachmentHtml);
+    } else {
+        // Insert at end if no selection
+        const length = quill.getLength();
+        quill.clipboard.dangerouslyPasteHTML(length, attachmentHtml);
+    }
 }
 
 // Hide loading overlay
@@ -464,5 +542,96 @@ function showLoadingOverlay() {
     overlay.classList.remove('hidden');
 }
 
+// Title editing functions
+function startEditingTitle() {
+    const titleElement = document.getElementById('meetingTitle');
+    const inputElement = document.getElementById('meetingTitleInput');
+    const editButton = document.getElementById('editTitleBtn');
+    
+    inputElement.value = titleElement.textContent;
+    titleElement.style.display = 'none';
+    inputElement.style.display = 'block';
+    editButton.style.display = 'none';
+    inputElement.focus();
+    inputElement.select();
+}
+
+async function saveTitle() {
+    const titleElement = document.getElementById('meetingTitle');
+    const inputElement = document.getElementById('meetingTitleInput');
+    const editButton = document.getElementById('editTitleBtn');
+    
+    const newTitle = inputElement.value.trim();
+    if (newTitle && newTitle !== titleElement.textContent) {
+        try {
+            setSaveStatus('saving');
+            await ipcRenderer.invoke('update-meeting-title', currentMeetingId, newTitle);
+            titleElement.textContent = newTitle;
+            setSaveStatus('saved');
+        } catch (error) {
+            console.error('Error updating meeting title:', error);
+            setSaveStatus('error');
+        }
+    }
+    
+    // Hide input, show title
+    inputElement.style.display = 'none';
+    titleElement.style.display = 'block';
+    editButton.style.display = 'block';
+}
+
+function cancelEditTitle() {
+    const titleElement = document.getElementById('meetingTitle');
+    const inputElement = document.getElementById('meetingTitleInput');
+    const editButton = document.getElementById('editTitleBtn');
+    
+    // Hide input, show title without saving
+    inputElement.style.display = 'none';
+    titleElement.style.display = 'block';
+    editButton.style.display = 'block';
+}
+
+// Attachment management functions
+async function downloadAttachment(filename, originalName) {
+    try {
+        const result = await ipcRenderer.invoke('download-attachment', currentMeetingId, filename);
+        if (result.success) {
+            console.log('File download initiated:', originalName);
+        } else {
+            alert('Failed to download file');
+        }
+    } catch (error) {
+        console.error('Error downloading attachment:', error);
+        alert('Error downloading file: ' + error.message);
+    }
+}
+
+async function removeAttachment(filename) {
+    if (!confirm('Are you sure you want to remove this attachment?')) return;
+    
+    try {
+        setSaveStatus('saving');
+        const result = await ipcRenderer.invoke('remove-attachment', currentMeetingId, filename);
+        if (result.success) {
+            // Remove from editor
+            const attachmentElement = document.querySelector(`[data-filename="${filename}"]`);
+            if (attachmentElement) {
+                attachmentElement.remove();
+            }
+            // Reload attachments list
+            await loadAttachments();
+        } else {
+            alert('Failed to remove attachment');
+        }
+        setSaveStatus('saved');
+    } catch (error) {
+        console.error('Error removing attachment:', error);
+        setSaveStatus('error');
+        alert('Error removing attachment: ' + error.message);
+    }
+}
+
 // Make functions available globally
 window.removeParticipant = removeParticipant;
+window.downloadAttachment = downloadAttachment;
+window.removeAttachment = removeAttachment;

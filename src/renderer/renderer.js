@@ -10,30 +10,21 @@ class MeetingApp {
 
     init() {
         this.setupEventListeners();
-        this.updateTodayDate();
         this.loadMeetings();
         
         setInterval(() => this.updateMeetingStatuses(), 30000);
     }
 
     setupEventListeners() {
-        const refreshBtn = document.getElementById('refresh-btn');
-        refreshBtn.addEventListener('click', () => this.refreshMeetings());
+        const newNoteBtn = document.getElementById('new-note-btn');
+        newNoteBtn.addEventListener('click', () => this.createNewNote());
+
+        const showMoreBtn = document.getElementById('show-more-btn');
+        showMoreBtn.addEventListener('click', () => this.toggleShowMore());
 
         ipcRenderer.on('meetings-refreshed', () => {
             this.loadMeetings();
         });
-    }
-
-    updateTodayDate() {
-        const today = new Date();
-        const dateStr = today.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-        document.getElementById('today-date').textContent = dateStr;
     }
 
     async loadMeetings() {
@@ -50,21 +41,14 @@ class MeetingApp {
         }
     }
 
-    async refreshMeetings() {
-        const refreshBtn = document.getElementById('refresh-btn');
-        refreshBtn.disabled = true;
-        refreshBtn.textContent = 'Refreshing...';
-        
-        try {
-            await ipcRenderer.invoke('refresh-meetings');
-            this.showSuccess('Meetings refreshed successfully');
-        } catch (error) {
-            console.error('Error refreshing meetings:', error);
-            this.showError('Failed to refresh meetings: ' + error.message);
-        } finally {
-            refreshBtn.disabled = false;
-            refreshBtn.textContent = 'Refresh';
-        }
+    async createNewNote() {
+        console.log('Creating new note...');
+        this.showSuccess('New note feature will be implemented in Milestone 2');
+    }
+
+    async toggleShowMore() {
+        console.log('Toggle show more...');
+        this.showSuccess('Show more feature will be implemented in future updates');
     }
 
     renderMeetings() {
@@ -75,24 +59,23 @@ class MeetingApp {
             return;
         }
 
-        const meetingList = document.createElement('div');
-        meetingList.className = 'meeting-list';
+        const meetingsCard = document.createElement('div');
+        meetingsCard.className = 'meetings-card';
         
         this.meetings.forEach(meeting => {
             const meetingElement = this.createMeetingElement(meeting);
-            meetingList.appendChild(meetingElement);
+            meetingsCard.appendChild(meetingElement);
         });
 
         container.innerHTML = '';
-        container.appendChild(meetingList);
+        container.appendChild(meetingsCard);
     }
 
     renderNoMeetings() {
         return `
             <div class="no-meetings">
                 <h2>No meetings scheduled for today</h2>
-                <p>Select an Excel file to import your meeting schedule</p>
-                <button class="select-excel-btn" onclick="this.selectExcelFile()">Select Excel File</button>
+                <p>Your calendar is clear for today!</p>
             </div>
         `;
     }
@@ -107,40 +90,36 @@ class MeetingApp {
         const status = this.getMeetingStatus(startTime, endTime);
         const participants = meeting.participants ? JSON.parse(meeting.participants) : [];
 
+        // Format date for badge
+        const dateStr = startTime.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric' 
+        }).replace(' ', ' ').toUpperCase();
+
+        // Count participants
+        let participantText = '';
+        if (participants.length === 1) {
+            participantText = '1 participant';
+        } else if (participants.length > 1) {
+            participantText = `${participants.length} participants`;
+        }
+
         meetingDiv.innerHTML = `
             <div class="meeting-header">
-                <div>
+                <div class="date-badge">${dateStr}</div>
+                <div class="meeting-info">
                     <div class="meeting-title">${this.escapeHtml(meeting.title)}</div>
                     <div class="meeting-time">
-                        <span>⏰ ${this.formatTime(startTime)} - ${this.formatTime(endTime)}</span>
+                        <span class="status-indicator status-${status.class}"></span>
+                        ${this.formatTime(startTime)} - ${this.formatTime(endTime)}
                     </div>
+                    ${participantText ? `<div class="meeting-participants">${participantText}</div>` : ''}
                 </div>
-                <div class="meeting-status status-${status.class}">${status.text}</div>
-            </div>
-            
-            ${participants.length > 0 ? `
-                <div class="meeting-participants">
-                    👥 ${participants.slice(0, 3).join(', ')}${participants.length > 3 ? ` and ${participants.length - 3} more` : ''}
-                </div>
-            ` : ''}
-
-            <div class="meeting-actions">
-                <button class="action-btn primary" onclick="app.openMeetingNotes(${meeting.id})">
-                    📝 Notes
-                </button>
-                <button class="action-btn success" onclick="app.startRecording(${meeting.id})" ${status.class !== 'active' ? 'disabled' : ''}>
-                    🎙️ Record
-                </button>
-                <button class="action-btn" onclick="app.addAttachment(${meeting.id})">
-                    📎 Attach
-                </button>
             </div>
         `;
 
         meetingDiv.addEventListener('click', (e) => {
-            if (!e.target.classList.contains('action-btn')) {
-                this.selectMeeting(meeting);
-            }
+            this.selectMeeting(meeting);
         });
 
         return meetingDiv;
@@ -182,16 +161,6 @@ class MeetingApp {
     async openMeetingNotes(meetingId) {
         console.log('Opening notes for meeting:', meetingId);
         this.showSuccess('Notes feature will be implemented in Milestone 2');
-    }
-
-    async startRecording(meetingId) {
-        console.log('Starting recording for meeting:', meetingId);
-        this.showSuccess('Recording feature will be implemented in Milestone 3');
-    }
-
-    async addAttachment(meetingId) {
-        console.log('Adding attachment for meeting:', meetingId);
-        this.showSuccess('Attachment feature will be implemented in Milestone 2');
     }
 
     updateMeetingStatuses() {
@@ -262,9 +231,6 @@ class MeetingApp {
         return div.innerHTML;
     }
 
-    selectExcelFile() {
-        console.log('Selecting Excel file...');
-    }
 }
 
 const app = new MeetingApp();

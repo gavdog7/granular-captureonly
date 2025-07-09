@@ -11,19 +11,16 @@ class MeetingLoader {
   }
 
   async loadTodaysMeetings() {
-    const excelFilePath = this.store.get('excelFilePath');
+    // Automatically use the calendar management log.xlsx file
+    const excelFilePath = path.join(__dirname, '../docs/Calendar import xlsx/Calendar management log.xlsx');
     
-    if (!excelFilePath) {
-      throw new Error('No Excel file selected. Please select an Excel file first.');
-    }
-
     if (!await fs.pathExists(excelFilePath)) {
-      throw new Error(`Excel file not found: ${excelFilePath}`);
+      throw new Error(`Calendar management log.xlsx not found at: ${excelFilePath}`);
     }
 
     try {
       const workbook = XLSX.readFile(excelFilePath);
-      const meetings = await this.parseExcelFile(workbook);
+      const meetings = await this.parseCalendarManagementLog(workbook);
       const today = new Date().toISOString().split('T')[0];
       
       const todaysMeetings = meetings.filter(meeting => {
@@ -47,50 +44,79 @@ class MeetingLoader {
     }
   }
 
-  async parseExcelFile(workbook) {
+  async parseCalendarManagementLog(workbook) {
     const meetings = [];
-    const sheetNames = workbook.SheetNames;
     
-    for (const sheetName of sheetNames) {
-      const worksheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(worksheet);
+    // Use the "6-Week Meeting Forecast" sheet specifically
+    const targetSheet = "6-Week Meeting Forecast";
+    const worksheet = workbook.Sheets[targetSheet];
+    
+    if (!worksheet) {
+      throw new Error(`Sheet "${targetSheet}" not found in Excel file`);
+    }
+
+    // Get the raw data - we know headers are in row 1
+    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    // Headers are in row 1 (index 1)
+    const headers = rawData[1];
+    
+    // Convert data to objects starting from row 2
+    for (let i = 2; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || row.length === 0) continue;
       
-      for (const row of data) {
-        const meeting = this.parseMeetingRow(row);
-        if (meeting) {
-          meetings.push(meeting);
+      const meetingObj = {};
+      headers.forEach((header, index) => {
+        if (header && row[index] !== undefined) {
+          meetingObj[header] = row[index];
         }
+      });
+      
+      const meeting = this.parseCalendarMeetingRow(meetingObj);
+      if (meeting) {
+        meetings.push(meeting);
       }
     }
 
     return meetings;
   }
 
-  parseMeetingRow(row) {
-    const titleFields = ['Subject', 'Title', 'Meeting', 'Event', 'Description'];
-    const startTimeFields = ['Start', 'Start Time', 'Start Date', 'Date', 'Time'];
-    const endTimeFields = ['End', 'End Time', 'End Date', 'Duration'];
-    const participantFields = ['Attendees', 'Participants', 'Invitees', 'People'];
+  parseCalendarMeetingRow(meeting) {
+    const title = meeting['Meeting Title'];
+    const startDate = meeting['Start Date'];
+    const startTime = meeting['Start Time'];
+    const endTime = meeting['End Time'];
+    const participants = meeting['Participants'];
+    const status = meeting['Status'];
 
-    const title = this.findFieldValue(row, titleFields);
-    const startTime = this.findFieldValue(row, startTimeFields);
-    const endTime = this.findFieldValue(row, endTimeFields);
-    const participants = this.findFieldValue(row, participantFields);
-
-    if (!title || !startTime) {
+    // Skip rows without essential data
+    if (!title || !startDate || title.trim() === '') {
       return null;
     }
 
-    let parsedStartTime;
-    let parsedEndTime;
-
-    try {
-      parsedStartTime = this.parseDateTime(startTime);
-      parsedEndTime = endTime ? this.parseDateTime(endTime) : this.addDefaultDuration(parsedStartTime);
-    } catch (error) {
-      console.warn(`Failed to parse time for meeting "${title}":`, error);
+    // Apply filter: exclude meetings where status is OWNER and participants is blank
+    if (status === 'OWNER' && (!participants || participants.trim() === '')) {
       return null;
     }
+
+    // Parse the date
+    const meetingDate = this.parseExcelDate(startDate);
+    if (!meetingDate) {
+      return null;
+    }
+
+    // Parse times
+    const parsedStartTime = this.parseExcelTime(startTime);
+    const parsedEndTime = this.parseExcelTime(endTime);
+
+    // Create final datetime objects
+    let finalStartTime = parsedStartTime || new Date(meetingDate.getTime() + 9 * 60 * 60 * 1000); // 9 AM default
+    let finalEndTime = parsedEndTime || new Date(finalStartTime.getTime() + 30 * 60 * 1000); // 30 min default
+
+    // Set the correct date for the times
+    finalStartTime.setFullYear(meetingDate.getFullYear(), meetingDate.getMonth(), meetingDate.getDate());
+    finalEndTime.setFullYear(meetingDate.getFullYear(), meetingDate.getMonth(), meetingDate.getDate());
 
     const participantList = this.parseParticipants(participants);
     const folderName = this.sanitizeFolderName(title);
@@ -98,8 +124,8 @@ class MeetingLoader {
     return {
       title,
       folderName,
-      startTime: parsedStartTime.toISOString(),
-      endTime: parsedEndTime.toISOString(),
+      startTime: finalStartTime.toISOString(),
+      endTime: finalEndTime.toISOString(),
       participants: participantList
     };
   }
@@ -110,6 +136,83 @@ class MeetingLoader {
         return row[field];
       }
     }
+    return null;
+  }
+
+  parseExcelDate(excelDate) {
+    if (!excelDate) return null;
+    
+    // Handle Excel date formats
+    if (excelDate instanceof Date) {
+      return excelDate;
+    }
+    
+    if (typeof excelDate === 'number') {
+      // Excel date serial number - use standard Excel epoch (January 1, 1900)
+      // Excel treats 1900 as a leap year (it's not), so we need to account for this
+      const excelEpoch = new Date(1900, 0, 1);
+      return new Date(excelEpoch.getTime() + (excelDate - 1) * 86400 * 1000);
+    }
+    
+    if (typeof excelDate === 'string') {
+      // Try to parse string date formats
+      const parsed = new Date(excelDate);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+      
+      // Try MM/DD/YYYY format
+      const dateMatch = excelDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (dateMatch) {
+        const month = parseInt(dateMatch[1]) - 1; // JavaScript months are 0-indexed
+        const day = parseInt(dateMatch[2]);
+        const year = parseInt(dateMatch[3]);
+        return new Date(year, month, day);
+      }
+    }
+    
+    return null;
+  }
+
+  parseExcelTime(timeValue) {
+    if (!timeValue) return null;
+    
+    // If it's already a Date object
+    if (timeValue instanceof Date) {
+      return timeValue;
+    }
+    
+    // If it's a number (Excel time serial - fraction of a day)
+    if (typeof timeValue === 'number') {
+      const hours = Math.floor(timeValue * 24);
+      const minutes = Math.floor((timeValue * 24 * 60) % 60);
+      const seconds = Math.floor((timeValue * 24 * 60 * 60) % 60);
+      
+      const date = new Date();
+      date.setHours(hours, minutes, seconds, 0);
+      return date;
+    }
+    
+    // If it's a string, try to parse it
+    if (typeof timeValue === 'string') {
+      const timeMatch = timeValue.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+      if (timeMatch) {
+        let hours = parseInt(timeMatch[1]);
+        const minutes = parseInt(timeMatch[2]);
+        const ampm = timeMatch[3];
+        
+        if (ampm && ampm.toUpperCase() === 'PM' && hours !== 12) {
+          hours += 12;
+        } else if (ampm && ampm.toUpperCase() === 'AM' && hours === 12) {
+          hours = 0;
+        }
+        
+        const date = new Date();
+        date.setHours(hours, minutes, 0, 0);
+        return date;
+      }
+    }
+    
     return null;
   }
 

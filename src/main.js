@@ -39,25 +39,6 @@ function createMenu() {
       label: 'File',
       submenu: [
         {
-          label: 'Select Excel File',
-          accelerator: 'CmdOrCtrl+O',
-          click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow, {
-              properties: ['openFile'],
-              filters: [
-                { name: 'Excel Files', extensions: ['xlsx', 'xls'] }
-              ]
-            });
-
-            if (!result.canceled && result.filePaths.length > 0) {
-              const filePath = result.filePaths[0];
-              store.set('excelFilePath', filePath);
-              await meetingLoader.loadTodaysMeetings();
-              mainWindow.webContents.send('meetings-refreshed');
-            }
-          }
-        },
-        {
           label: 'Refresh Meetings',
           accelerator: 'CmdOrCtrl+R',
           click: async () => {
@@ -151,10 +132,8 @@ async function initializeApp() {
 
     meetingLoader = new MeetingLoader(database, store);
     
-    const excelFilePath = store.get('excelFilePath');
-    if (excelFilePath) {
-      await meetingLoader.loadTodaysMeetings();
-    }
+    // Always load today's meetings from the calendar management log
+    await meetingLoader.loadTodaysMeetings();
 
   } catch (error) {
     console.error('Error initializing app:', error);

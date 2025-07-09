@@ -269,6 +269,14 @@ class Database {
     ]);
   }
 
+  updateMeetingNotesSync(meetingId, content) {
+    // Synchronous version for page unload
+    return this.db.run(
+      'UPDATE meetings SET notes_content = ?, updated_at = ? WHERE id = ?',
+      [content, new Date().toISOString(), meetingId]
+    );
+  }
+
   async close() {
     return new Promise((resolve) => {
       if (this.db) {

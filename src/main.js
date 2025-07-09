@@ -314,4 +314,17 @@ ipcMain.handle('create-new-meeting', async (event, meetingData) => {
   }
 });
 
+// Synchronous version for page unload
+ipcMain.on('update-meeting-notes-sync', (event, meetingId, content) => {
+  try {
+    // Use synchronous database call
+    database.updateMeetingNotesSync(meetingId, content);
+    console.log(`Notes updated synchronously for meeting ${meetingId}`);
+    event.returnValue = { success: true };
+  } catch (error) {
+    console.error('Error updating meeting notes synchronously:', error);
+    event.returnValue = { success: false, error: error.message };
+  }
+});
+
 module.exports = { database, meetingLoader, store };

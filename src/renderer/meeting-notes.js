@@ -90,6 +90,7 @@ function initializeQuillEditor() {
     // Set up auto-save on text change
     quill.on('text-change', (delta, oldDelta, source) => {
         if (source === 'user' && !isLoading) {
+            setSaveStatus('saving'); // Immediately show saving status
             scheduleAutoSave();
         }
     });
@@ -115,8 +116,20 @@ function initializeEventListeners() {
     });
     
     // Save before page unload
-    window.addEventListener('beforeunload', async (e) => {
-        await ensureNotesAreSaved();
+    window.addEventListener('beforeunload', (e) => {
+        if (saveTimeout) {
+            clearTimeout(saveTimeout);
+            console.log('Page unloading, forcing immediate save');
+            // Force an immediate synchronous save
+            try {
+                const content = quill.getContents();
+                // Use sendSync for synchronous save before page unload
+                ipcRenderer.sendSync('update-meeting-notes-sync', currentMeetingId, JSON.stringify(content));
+                console.log('Synchronous save completed');
+            } catch (error) {
+                console.error('Error in synchronous save:', error);
+            }
+        }
     });
     
     // Save on focus loss
@@ -162,10 +175,12 @@ async function loadMeetingData() {
         renderParticipants(participants);
         
         // Load notes content
+        console.log('Loading notes for meeting:', meeting.id, 'Notes content:', meeting.notes_content);
         if (meeting.notes_content) {
             isLoading = true;
             try {
                 const parsedContent = JSON.parse(meeting.notes_content);
+                console.log('Parsed notes content:', parsedContent);
                 // Validate it's a proper Quill Delta
                 if (parsedContent && parsedContent.ops && Array.isArray(parsedContent.ops)) {
                     quill.setContents(parsedContent);
@@ -179,6 +194,8 @@ async function loadMeetingData() {
                 quill.setText(meeting.notes_content);
             }
             isLoading = false;
+        } else {
+            console.log('No notes content found for meeting', meeting.id);
         }
         
         // Load attachments
@@ -246,9 +263,11 @@ async function addParticipant() {
         
         participants.push(email);
         
+        setSaveStatus('saving');
         await ipcRenderer.invoke('update-meeting-participants', currentMeetingId, participants);
         renderParticipants(participants);
         input.value = '';
+        setSaveStatus('saved');
         
     } catch (error) {
         console.error('Error adding participant:', error);
@@ -269,8 +288,10 @@ async function removeParticipant(email) {
         
         const updatedParticipants = participants.filter(p => p !== email);
         
+        setSaveStatus('saving');
         await ipcRenderer.invoke('update-meeting-participants', currentMeetingId, updatedParticipants);
         renderParticipants(updatedParticipants);
+        setSaveStatus('saved');
         
     } catch (error) {
         console.error('Error removing participant:', error);
@@ -295,7 +316,6 @@ function validateParticipantInput() {
 // Schedule auto-save
 function scheduleAutoSave() {
     clearTimeout(saveTimeout);
-    setSaveStatus('saving');
     
     saveTimeout = setTimeout(() => {
         saveNotes();
@@ -314,7 +334,9 @@ async function ensureNotesAreSaved() {
 async function saveNotes() {
     try {
         const content = quill.getContents();
+        console.log('Saving notes for meeting', currentMeetingId, content);
         await ipcRenderer.invoke('update-meeting-notes', currentMeetingId, JSON.stringify(content));
+        console.log('Notes saved successfully');
         setSaveStatus('saved');
     } catch (error) {
         console.error('Error saving notes:', error);

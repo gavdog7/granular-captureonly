@@ -231,7 +231,8 @@ ipcMain.handle('get-all-todays-meetings', async () => {
 
 ipcMain.handle('update-meeting-notes', async (event, meetingId, content) => {
   try {
-    await database.updateMeetingNotes(meetingId, content);
+    const result = await database.updateMeetingNotes(meetingId, content);
+    console.log(`Notes updated for meeting ${meetingId}`);
     return { success: true };
   } catch (error) {
     console.error('Error updating meeting notes:', error);
@@ -299,6 +300,16 @@ ipcMain.handle('get-meeting-attachments', async (event, meetingId) => {
     return await database.getMeetingAttachments(meetingId);
   } catch (error) {
     console.error('Error getting meeting attachments:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('create-new-meeting', async (event, meetingData) => {
+  try {
+    const result = await database.createNewMeeting(meetingData);
+    return { success: true, meetingId: result.lastID };
+  } catch (error) {
+    console.error('Error creating new meeting:', error);
     throw error;
   }
 });

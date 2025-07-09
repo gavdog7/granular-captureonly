@@ -255,6 +255,20 @@ class Database {
     );
   }
 
+  async createNewMeeting(meetingData) {
+    return this.run(`
+      INSERT INTO meetings (title, folder_name, start_time, end_time, participants, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      meetingData.title,
+      meetingData.folderName,
+      meetingData.startTime,
+      meetingData.endTime,
+      JSON.stringify(meetingData.participants || []),
+      new Date().toISOString()
+    ]);
+  }
+
   async close() {
     return new Promise((resolve) => {
       if (this.db) {

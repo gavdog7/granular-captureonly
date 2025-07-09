@@ -55,7 +55,31 @@ class MeetingApp {
 
     async createNewNote() {
         console.log('Creating new note...');
-        this.showSuccess('Click on any meeting below to open its notes editor');
+        try {
+            // Create a new meeting starting at current time
+            const now = new Date();
+            const endTime = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour later
+            
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const newMeeting = {
+                title: `New Meeting (${timeStr})`,
+                folderName: `new-meeting-${now.getTime()}`,
+                startTime: now.toISOString(),
+                endTime: endTime.toISOString(),
+                participants: []
+            };
+            
+            const result = await ipcRenderer.invoke('create-new-meeting', newMeeting);
+            if (result.success) {
+                // Navigate to the new meeting's notes page
+                window.location.href = `meeting-notes.html?meetingId=${result.meetingId}`;
+            } else {
+                this.showError('Failed to create new meeting');
+            }
+        } catch (error) {
+            console.error('Error creating new meeting:', error);
+            this.showError('Failed to create new meeting: ' + error.message);
+        }
     }
 
     async toggleShowMore() {

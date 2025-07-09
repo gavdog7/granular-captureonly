@@ -100,16 +100,28 @@ function initializeQuillEditor() {
 
 // Initialize event listeners
 function initializeEventListeners() {
-    // Back button
-    document.getElementById('backButton').addEventListener('click', () => {
+    // Back button - wait for save before navigating
+    document.getElementById('backButton').addEventListener('click', async () => {
+        await ensureNotesAreSaved();
         window.location.href = 'index.html';
     });
     
-    // Escape key to go back
-    document.addEventListener('keydown', (e) => {
+    // Escape key to go back - wait for save before navigating
+    document.addEventListener('keydown', async (e) => {
         if (e.key === 'Escape' || (e.metaKey && e.key === 'ArrowLeft')) {
+            await ensureNotesAreSaved();
             window.location.href = 'index.html';
         }
+    });
+    
+    // Save before page unload
+    window.addEventListener('beforeunload', async (e) => {
+        await ensureNotesAreSaved();
+    });
+    
+    // Save on focus loss
+    window.addEventListener('blur', async () => {
+        await ensureNotesAreSaved();
     });
     
     // Add participant
@@ -153,9 +165,17 @@ async function loadMeetingData() {
         if (meeting.notes_content) {
             isLoading = true;
             try {
-                quill.setContents(JSON.parse(meeting.notes_content));
+                const parsedContent = JSON.parse(meeting.notes_content);
+                // Validate it's a proper Quill Delta
+                if (parsedContent && parsedContent.ops && Array.isArray(parsedContent.ops)) {
+                    quill.setContents(parsedContent);
+                } else {
+                    // If it's not a proper Delta, treat as plain text
+                    quill.setText(meeting.notes_content);
+                }
             } catch (e) {
-                console.warn('Failed to parse notes content, using as plain text');
+                console.warn('Failed to parse notes content as JSON, treating as plain text');
+                // Try to parse as plain text if it's not JSON
                 quill.setText(meeting.notes_content);
             }
             isLoading = false;
@@ -279,7 +299,15 @@ function scheduleAutoSave() {
     
     saveTimeout = setTimeout(() => {
         saveNotes();
-    }, 3000);
+    }, 1000); // Reduced from 3000ms to 1000ms
+}
+
+// Ensure notes are saved before navigation
+async function ensureNotesAreSaved() {
+    if (saveTimeout) {
+        clearTimeout(saveTimeout);
+        await saveNotes();
+    }
 }
 
 // Save notes to database

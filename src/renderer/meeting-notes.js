@@ -1,5 +1,7 @@
 // Meeting Notes Page JavaScript
+console.log('meeting-notes.js script loading...');
 const { ipcRenderer } = require('electron');
+console.log('ipcRenderer loaded successfully');
 
 let quill;
 let currentMeetingId;
@@ -8,9 +10,13 @@ let isLoading = true;
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('Meeting notes page loading...');
+    
     // Get meeting ID from URL params
     const urlParams = new URLSearchParams(window.location.search);
     currentMeetingId = urlParams.get('meetingId');
+    
+    console.log('Meeting ID from URL:', currentMeetingId);
     
     if (!currentMeetingId) {
         console.error('No meeting ID provided');
@@ -18,17 +24,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     
+    console.log('Initializing components...');
+    
     // Initialize components
     initializeQuillEditor();
+    console.log('Quill editor initialized');
+    
     initializeEventListeners();
+    console.log('Event listeners initialized');
+    
     await loadMeetingData();
+    console.log('Meeting data loaded');
     
     // Hide loading overlay
     hideLoadingOverlay();
+    console.log('Page initialization complete');
 });
 
 // Initialize Quill editor with custom configuration
 function initializeQuillEditor() {
+    console.log('Initializing Quill editor...');
+    
+    if (typeof Quill === 'undefined') {
+        console.error('Quill is not loaded!');
+        return;
+    }
+    
+    const editorElement = document.getElementById('editor');
+    if (!editorElement) {
+        console.error('Editor element not found!');
+        return;
+    }
+    
     const toolbarOptions = [
         ['bold', 'italic', 'underline'],
         ['blockquote', 'code-block'],
@@ -38,6 +65,7 @@ function initializeQuillEditor() {
         ['clean']
     ];
     
+    console.log('Creating Quill instance...');
     quill = new Quill('#editor', {
         theme: 'snow',
         modules: {
@@ -89,7 +117,9 @@ function initializeQuillEditor() {
     
     // Set up auto-save on text change
     quill.on('text-change', (delta, oldDelta, source) => {
+        console.log('Text change detected:', { delta, source, isLoading });
         if (source === 'user' && !isLoading) {
+            console.log('User text change - setting save status and scheduling auto-save');
             setSaveStatus('saving'); // Immediately show saving status
             scheduleAutoSave();
         }
@@ -346,7 +376,12 @@ async function saveNotes() {
 
 // Set save status indicator
 function setSaveStatus(status) {
+    console.log('Setting save status to:', status);
     const indicator = document.getElementById('saveIndicator');
+    if (!indicator) {
+        console.error('Save indicator element not found!');
+        return;
+    }
     indicator.className = `status-indicator ${status}`;
     
     // Update tooltip
@@ -356,6 +391,7 @@ function setSaveStatus(status) {
         error: 'Error saving'
     };
     indicator.title = tooltips[status] || 'Save Status';
+    console.log('Save status indicator updated to:', status);
 }
 
 // Set recording status indicator

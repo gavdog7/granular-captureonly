@@ -167,11 +167,6 @@ function initializeEventListeners() {
         await ensureNotesAreSaved();
     });
     
-    // Legacy participant input handling (now handled in modal)
-    // These listeners are now in the modal setup above
-    
-    // Validate participant input
-    document.getElementById('participantInput').addEventListener('input', validateParticipantInput);
     
     // Edit title functionality - click title to edit
     document.getElementById('meetingTitle').addEventListener('click', startEditingTitle);
@@ -185,20 +180,24 @@ function initializeEventListeners() {
         }
     });
     
-    // Participant modal functionality
-    document.getElementById('addParticipantBtn').addEventListener('click', showParticipantModal);
-    document.getElementById('participantModal').addEventListener('click', (e) => {
-        if (e.target.id === 'participantModal') {
-            hideParticipantModal();
-        }
-    });
-    document.getElementById('participantInput').addEventListener('keypress', (e) => {
+    // New inline participant functionality
+    document.getElementById('addParticipantBtn').addEventListener('click', showInlineParticipantInput);
+    
+    // Inline participant input handling
+    const inlineInput = document.getElementById('participantInlineInput');
+    inlineInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
-            addParticipant();
-            hideParticipantModal();
+            addParticipantFromInline();
         }
         if (e.key === 'Escape') {
-            hideParticipantModal();
+            hideInlineParticipantInput();
+        }
+    });
+    
+    inlineInput.addEventListener('blur', () => {
+        // Hide if empty when clicking away
+        if (!inlineInput.value.trim()) {
+            hideInlineParticipantInput();
         }
     });
 }
@@ -286,22 +285,45 @@ function formatMeetingTime(startTime, endTime) {
 // Render participants list
 function renderParticipants(participants) {
     const participantsList = document.getElementById('participantsList');
+    const participantsPill = document.getElementById('participantsPill');
+    const participantsCollapsed = document.getElementById('participantsCollapsed');
+    
+    // Update the pill text
+    participantsPill.textContent = `${participants.length} participant${participants.length !== 1 ? 's' : ''}`;
+    
+    // Clear and rebuild the list
     participantsList.innerHTML = '';
     
     participants.forEach(participant => {
-        const participantTag = document.createElement('div');
-        participantTag.className = 'participant-tag';
-        participantTag.innerHTML = `
+        const participantEmail = document.createElement('div');
+        participantEmail.className = 'participant-email';
+        participantEmail.innerHTML = `
             <span>${participant}</span>
             <button class="participant-remove" onclick="removeParticipant('${participant}')">×</button>
         `;
-        participantsList.appendChild(participantTag);
+        participantsList.appendChild(participantEmail);
     });
+    
+    // Show/hide stacked pills based on participant count
+    const stackedPill1 = participantsCollapsed.querySelector('.participants-pill-stacked');
+    const stackedPill2 = participantsCollapsed.querySelector('.participants-pill-stacked-2');
+    
+    if (participants.length > 1) {
+        stackedPill1.style.display = 'block';
+        if (participants.length > 2) {
+            stackedPill2.style.display = 'block';
+        } else {
+            stackedPill2.style.display = 'none';
+        }
+    } else {
+        stackedPill1.style.display = 'none';
+        stackedPill2.style.display = 'none';
+    }
 }
 
-// Add participant
-async function addParticipant() {
-    const input = document.getElementById('participantInput');
+// Add participant from inline input
+async function addParticipantFromInline() {
+    const input = document.getElementById('participantInlineInput');
     const email = input.value.trim();
     
     if (!email || !isValidEmail(email)) {
@@ -319,7 +341,7 @@ async function addParticipant() {
         }
         
         if (participants.includes(email)) {
-            input.value = '';
+            hideInlineParticipantInput();
             return;
         }
         
@@ -329,6 +351,8 @@ async function addParticipant() {
         await ipcRenderer.invoke('update-meeting-participants', currentMeetingId, participants);
         renderParticipants(participants);
         setSaveStatus('saved');
+        
+        hideInlineParticipantInput();
         
     } catch (error) {
         console.error('Error adding participant:', error);
@@ -363,15 +387,6 @@ async function removeParticipant(email) {
 function isValidEmail(email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
-}
-
-// Validate participant input
-function validateParticipantInput() {
-    const input = document.getElementById('participantInput');
-    const button = document.getElementById('addParticipantBtn');
-    const email = input.value.trim();
-    
-    button.disabled = !email || !isValidEmail(email);
 }
 
 // Schedule auto-save
@@ -617,19 +632,22 @@ function cancelEditTitle() {
     titleElement.style.display = 'block';
 }
 
-// Participant modal functions
-function showParticipantModal() {
-    const modal = document.getElementById('participantModal');
-    const input = document.getElementById('participantInput');
+// Inline participant input functions
+function showInlineParticipantInput() {
+    const inputPill = document.getElementById('participantInputPill');
+    const input = document.getElementById('participantInlineInput');
     
-    modal.style.display = 'flex';
+    inputPill.style.display = 'inline-flex';
     input.value = '';
     input.focus();
 }
 
-function hideParticipantModal() {
-    const modal = document.getElementById('participantModal');
-    modal.style.display = 'none';
+function hideInlineParticipantInput() {
+    const inputPill = document.getElementById('participantInputPill');
+    const input = document.getElementById('participantInlineInput');
+    
+    inputPill.style.display = 'none';
+    input.value = '';
 }
 
 // Attachment management functions

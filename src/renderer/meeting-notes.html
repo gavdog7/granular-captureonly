@@ -20,7 +20,15 @@
                 </div>
                 <div class="meeting-time" id="meetingTime"></div>
                 <div class="meeting-participants">
-                    <div class="participants-list" id="participantsList"></div>
+                    <div class="participants-collapsed" id="participantsCollapsed">
+                        <div class="participants-pill-stacked-2"></div>
+                        <div class="participants-pill-stacked"></div>
+                        <div class="participants-pill" id="participantsPill">0 participants</div>
+                        <div class="participants-list" id="participantsList"></div>
+                    </div>
+                    <div class="participant-input-pill" id="participantInputPill" style="display: none;">
+                        <input type="email" id="participantInlineInput" placeholder="Enter email" />
+                    </div>
                     <button class="add-participant-btn" id="addParticipantBtn">+</button>
                 </div>
             </div>
@@ -44,12 +52,6 @@
             </div>
         </div>
 
-        <!-- Participant input modal -->
-        <div class="participant-modal" id="participantModal" style="display: none;">
-            <div class="participant-modal-content">
-                <input type="email" id="participantInput" placeholder="Enter email address" />
-            </div>
-        </div>
 
         <div class="loading-overlay" id="loadingOverlay">
             <div class="loading-spinner"></div>

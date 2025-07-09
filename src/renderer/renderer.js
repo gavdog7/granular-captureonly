@@ -1,4 +1,5 @@
 const { ipcRenderer } = require('electron');
+const { dateOverride } = require('../date-override');
 
 class MeetingApp {
     constructor() {
@@ -175,6 +176,11 @@ class MeetingApp {
         const status = this.getMeetingStatus(startTime, endTime);
         const participants = meeting.participants ? JSON.parse(meeting.participants) : [];
 
+        // Add past class for styling if meeting is past
+        if (status.class === 'past') {
+            meetingDiv.classList.add('past');
+        }
+
         // Format date for badge
         const dateStr = startTime.toLocaleDateString('en-US', { 
             month: 'short', 
@@ -211,9 +217,12 @@ class MeetingApp {
     }
 
     getMeetingStatus(startTime, endTime) {
-        const now = new Date();
+        const now = dateOverride.now();
         
-        if (now < startTime) {
+        // Add 10-minute grace period to start time
+        const startTimeWithGrace = new Date(startTime.getTime() + 10 * 60 * 1000);
+        
+        if (now < startTimeWithGrace) {
             return { class: 'upcoming', text: 'Upcoming' };
         } else if (now >= startTime && now <= endTime) {
             return { class: 'active', text: 'Active' };
@@ -257,12 +266,22 @@ class MeetingApp {
                 const endTime = new Date(meeting.end_time);
                 const status = this.getMeetingStatus(startTime, endTime);
                 
-                const statusElement = item.querySelector('.meeting-status');
-                statusElement.className = `meeting-status status-${status.class}`;
-                statusElement.textContent = status.text;
+                // Update past class for styling
+                if (status.class === 'past') {
+                    item.classList.add('past');
+                } else {
+                    item.classList.remove('past');
+                }
+                
+                const statusElement = item.querySelector('.status-indicator');
+                if (statusElement) {
+                    statusElement.className = `status-indicator status-${status.class}`;
+                }
                 
                 const recordBtn = item.querySelector('.action-btn.success');
-                recordBtn.disabled = status.class !== 'active';
+                if (recordBtn) {
+                    recordBtn.disabled = status.class !== 'active';
+                }
             }
         });
     }

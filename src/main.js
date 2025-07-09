@@ -4,6 +4,7 @@ const fs = require('fs-extra');
 const Database = require('./database');
 const MeetingLoader = require('./meeting-loader');
 const Store = require('electron-store');
+const { setupTestDate, disableTestDate, dateOverride } = require('./date-override');
 
 let mainWindow;
 let database;
@@ -80,7 +81,46 @@ function createMenu() {
         { role: 'zoomin' },
         { role: 'zoomout' },
         { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'togglefullscreen' },
+        { type: 'separator' },
+        {
+          label: 'Date Override Status',
+          click: () => {
+            const status = dateOverride.getStatus();
+            const message = status.active 
+              ? `Date override is ACTIVE\nUsing: ${status.overrideDate}\nToday string: ${status.todayString}`
+              : `Date override is DISABLED\nUsing system date: ${status.systemDate}`;
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'Date Override Status',
+              message: message
+            });
+          }
+        },
+        {
+          label: 'Enable Test Date (July 11, 2025)',
+          click: async () => {
+            setupTestDate('2025-07-11');
+            await meetingLoader.refreshMeetings();
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'Date Override',
+              message: 'Date override enabled for July 11, 2025!\nMeetings refreshed.'
+            });
+          }
+        },
+        {
+          label: 'Disable Test Date',
+          click: async () => {
+            disableTestDate();
+            await meetingLoader.refreshMeetings();
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'Date Override',
+              message: 'Date override disabled!\nUsing system date. Meetings refreshed.'
+            });
+          }
+        }
       ]
     },
     {
@@ -114,6 +154,10 @@ function createMenu() {
 
 async function initializeApp() {
   try {
+    // 🧪 TEST MODE: Override date for testing
+    // TO DISABLE: Comment out the line below
+    // setupTestDate('2025-07-11'); // Friday, July 11, 2025
+    
     database = new Database();
     await database.initialize();
     console.log('Database initialized successfully');

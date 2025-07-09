@@ -2,6 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs-extra');
 const { app } = require('electron');
+const { dateOverride } = require('./date-override');
 
 class Database {
   constructor() {
@@ -125,7 +126,7 @@ class Database {
   }
 
   async getTodaysMeetings() {
-    const today = new Date().toISOString().split('T')[0];
+    const today = dateOverride.today();
     return this.all(
       'SELECT * FROM meetings WHERE date(start_time) = date(?) ORDER BY start_time',
       [today]

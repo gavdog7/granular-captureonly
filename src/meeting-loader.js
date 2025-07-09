@@ -1,6 +1,7 @@
 const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs-extra');
+const { dateOverride } = require('./date-override');
 
 class MeetingLoader {
   constructor(database, store) {
@@ -11,7 +12,7 @@ class MeetingLoader {
   }
 
   async loadTodaysMeetings() {
-    const today = new Date().toISOString().split('T')[0];
+    const today = dateOverride.today();
     
     // Check if we already have meetings for today
     const existingMeetings = await this.database.getTodaysMeetings();
@@ -38,7 +39,7 @@ class MeetingLoader {
     try {
       const workbook = XLSX.readFile(excelFilePath);
       const meetings = await this.parseCalendarManagementLog(workbook);
-      const today = new Date().toISOString().split('T')[0];
+      const today = dateOverride.today();
       
       const todaysMeetings = meetings.filter(meeting => {
         const meetingDate = new Date(meeting.startTime).toISOString().split('T')[0];
@@ -113,7 +114,7 @@ class MeetingLoader {
     try {
       const workbook = XLSX.readFile(excelFilePath);
       const meetings = await this.parseCalendarManagementLog(workbook, true); // Include filtered meetings
-      const today = new Date().toISOString().split('T')[0];
+      const today = dateOverride.today();
       
       const todaysMeetings = meetings.filter(meeting => {
         const meetingDate = new Date(meeting.startTime).toISOString().split('T')[0];

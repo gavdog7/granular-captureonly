@@ -243,6 +243,14 @@ class AudioRecorder {
       // Mark as stopped
       recording.isRecording = false;
 
+      // Mark recording as completed in database
+      if (recording.sessionId && recording.finalPath) {
+        const endTime = Date.now();
+        const duration = Math.floor((endTime - recording.startTime) / 1000);
+        this.database.endRecordingSessionSync(recording.sessionId, recording.finalPath, duration);
+        console.log(`Recording marked as completed in database for meeting ${meetingId}`);
+      }
+
       // Remove from active recordings
       this.activeRecordings.delete(meetingId);
 

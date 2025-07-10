@@ -124,7 +124,9 @@ class UploadService {
       console.log(`📁 Found ${filesToUpload.length} files to upload:`, filesToUpload.map(f => f.name));
 
       if (filesToUpload.length === 0) {
-        throw new Error('No files found to upload for this meeting');
+        console.log(`📝 No content to upload for meeting ${meetingId} - skipping`);
+        await this.database.setMeetingUploadStatus(meetingId, 'no_content');
+        return;
       }
 
       // Ensure Google Drive is authenticated

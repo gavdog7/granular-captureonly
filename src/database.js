@@ -234,6 +234,13 @@ class Database {
     );
   }
 
+  endRecordingSessionSync(sessionId, finalPath, duration) {
+    const stmt = this.db.prepare(
+      'UPDATE recording_sessions SET final_path = ?, ended_at = ?, duration = ?, completed = 1 WHERE id = ?'
+    );
+    return stmt.run(finalPath, new Date().toISOString(), duration, sessionId);
+  }
+
   async addAttachment(meetingId, filename, originalName) {
     return this.run(
       'INSERT INTO attachments (meeting_id, filename, original_name) VALUES (?, ?, ?)',

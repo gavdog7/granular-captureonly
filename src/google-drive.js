@@ -74,20 +74,8 @@ class GoogleDriveService {
     return this.oauth2Client && this.oauth2Client.credentials.access_token;
   }
 
-  async ensureFolderStructure(date) {
-    if (!this.drive) {
-      throw new Error('Google Drive not initialized. Please authenticate first.');
-    }
-
-    const year = date.getFullYear().toString();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    
-    let folderId = await this.findOrCreateFolder('Granular-CaptureOnly', 'root');
-    folderId = await this.findOrCreateFolder(year, folderId);
-    folderId = await this.findOrCreateFolder(month, folderId);
-    
-    return folderId;
-  }
+  // DEPRECATED: Use upload-service.js folder structure instead
+  // This method created conflicting folder structures
 
   async findOrCreateFolder(name, parentId) {
     const query = `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents`;

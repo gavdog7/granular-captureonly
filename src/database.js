@@ -427,7 +427,7 @@ class Database {
       const markdownContent = generateMarkdownDocument(meeting);
 
       // Determine file path (alongside audio recordings in project assets)
-      const projectRoot = path.dirname(path.dirname(__dirname)); // Go up from src/
+      const projectRoot = path.dirname(__dirname); // Go up from src/ to project root
       const dateStr = meeting.start_time.split('T')[0];
       const meetingDir = path.join(projectRoot, 'assets', dateStr, meeting.folder_name);
       await fs.ensureDir(meetingDir);
@@ -474,7 +474,7 @@ class Database {
       }
 
       // Determine file path (same as audio recordings)
-      const projectRoot = path.dirname(path.dirname(__dirname)); // Go up from src/
+      const projectRoot = path.dirname(__dirname); // Go up from src/ to project root
       const dateStr = meeting.start_time.split('T')[0];
       const filename = `${meeting.folder_name}-notes.md`;
       const filePath = path.join(projectRoot, 'assets', dateStr, meeting.folder_name, filename);

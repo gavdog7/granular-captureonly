@@ -354,36 +354,9 @@ ipcMain.handle('update-meeting-title', async (event, meetingId, title) => {
     const meetingDate = folderInfo.start_time.split('T')[0]; // Extract YYYY-MM-DD
     const { renameNoteFolderAndFiles, rollbackRename } = require('./utils/file-manager');
     
-    // Check if we need to use the actual folder that exists (audio recorder may have created different folder)
-    const fs = require('fs').promises;
-    const path = require('path');
-    const assetsPath = path.join(process.cwd(), 'assets', meetingDate);
-    
-    let actualFolderName = folderInfo.folder_name;
-    
-    // Check if the database folder exists
-    try {
-      await fs.access(path.join(assetsPath, folderInfo.folder_name));
-    } catch {
-      // Database folder doesn't exist, check if audio recorder created a different one
-      // Audio recorder uses sanitized current title for folder names
-      const AudioRecorder = require('./audio-recorder');
-      const audioRecorder = new AudioRecorder();
-      const sanitizedCurrentTitle = audioRecorder.sanitizeFolderName(title);
-      
-      try {
-        await fs.access(path.join(assetsPath, sanitizedCurrentTitle));
-        actualFolderName = sanitizedCurrentTitle;
-        // Update database to match reality
-        await database.updateMeetingFolderName(meetingId, actualFolderName);
-      } catch {
-        // Neither folder exists, continue with original logic
-      }
-    }
-    
     const renameResult = await renameNoteFolderAndFiles(
       meetingDate, 
-      actualFolderName, 
+      folderInfo.folder_name, 
       title
     );
 

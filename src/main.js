@@ -3,12 +3,14 @@ const path = require('path');
 const fs = require('fs-extra');
 const Database = require('./database');
 const MeetingLoader = require('./meeting-loader');
+const AudioRecorder = require('./audio-recorder');
 const Store = require('electron-store');
 const { setupTestDate, disableTestDate, dateOverride } = require('./date-override');
 
 let mainWindow;
 let database;
 let meetingLoader;
+let audioRecorder;
 let store;
 
 function createWindow() {
@@ -179,6 +181,7 @@ async function initializeApp() {
     });
 
     meetingLoader = new MeetingLoader(database, store);
+    audioRecorder = new AudioRecorder(database);
     
     // Always load today's meetings from the calendar management log
     await meetingLoader.loadTodaysMeetings();
@@ -208,6 +211,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  if (audioRecorder) {
+    await audioRecorder.cleanup();
+  }
   if (database) {
     await database.close();
   }
@@ -340,6 +346,23 @@ ipcMain.on('update-meeting-notes-sync', (event, meetingId, content) => {
   }
 });
 
+// Synchronous version for stopping recording on page unload
+ipcMain.on('stop-recording-sync', (event, meetingId) => {
+  try {
+    if (audioRecorder) {
+      // Stop recording synchronously
+      const result = audioRecorder.stopRecordingSync(meetingId);
+      console.log(`Recording stopped synchronously for meeting ${meetingId}`);
+      event.returnValue = result;
+    } else {
+      event.returnValue = { success: false, error: 'Audio recorder not available' };
+    }
+  } catch (error) {
+    console.error('Error stopping recording synchronously:', error);
+    event.returnValue = { success: false, error: error.message };
+  }
+});
+
 // Attachment management IPC handlers
 ipcMain.handle('upload-attachment', async (event, meetingId, fileInfo) => {
   try {
@@ -381,4 +404,85 @@ ipcMain.handle('remove-attachment', async (event, meetingId, filename) => {
   }
 });
 
-module.exports = { database, meetingLoader, store };
+// Audio recording IPC handlers
+ipcMain.handle('start-recording', async (event, meetingId) => {
+  try {
+    if (!audioRecorder) {
+      throw new Error('Audio recorder not initialized');
+    }
+    const result = await audioRecorder.startRecording(meetingId);
+    console.log(`Recording started for meeting ${meetingId}`);
+    return result;
+  } catch (error) {
+    console.error('Error starting recording:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('stop-recording', async (event, meetingId) => {
+  try {
+    if (!audioRecorder) {
+      throw new Error('Audio recorder not initialized');
+    }
+    const result = await audioRecorder.stopRecording(meetingId);
+    console.log(`Recording stopped for meeting ${meetingId}`);
+    return result;
+  } catch (error) {
+    console.error('Error stopping recording:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('pause-recording', async (event, meetingId) => {
+  try {
+    if (!audioRecorder) {
+      throw new Error('Audio recorder not initialized');
+    }
+    const result = await audioRecorder.pauseRecording(meetingId);
+    console.log(`Recording paused for meeting ${meetingId}`);
+    return result;
+  } catch (error) {
+    console.error('Error pausing recording:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('resume-recording', async (event, meetingId) => {
+  try {
+    if (!audioRecorder) {
+      throw new Error('Audio recorder not initialized');
+    }
+    const result = await audioRecorder.resumeRecording(meetingId);
+    console.log(`Recording resumed for meeting ${meetingId}`);
+    return result;
+  } catch (error) {
+    console.error('Error resuming recording:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-recording-status', async (event, meetingId) => {
+  try {
+    if (!audioRecorder) {
+      throw new Error('Audio recorder not initialized');
+    }
+    return audioRecorder.getRecordingStatus(meetingId);
+  } catch (error) {
+    console.error('Error getting recording status:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-recording-sessions', async (event, meetingId) => {
+  try {
+    if (!audioRecorder) {
+      throw new Error('Audio recorder not initialized');
+    }
+    return await audioRecorder.getRecordingSessions(meetingId);
+  } catch (error) {
+    console.error('Error getting recording sessions:', error);
+    throw error;
+  }
+});
+
+module.exports = { database, meetingLoader, audioRecorder, store };

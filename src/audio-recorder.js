@@ -1,0 +1,419 @@
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs').promises;
+const { app } = require('electron');
+
+class AudioRecorder {
+  constructor(database) {
+    this.database = database;
+    this.activeRecordings = new Map(); // meetingId -> recording session
+    this.binaryPath = path.join(__dirname, 'native', 'audio-capture', 'audio-capture');
+    this.assetsPath = path.join(app.getPath('userData'), 'assets');
+  }
+
+  /**
+   * Start recording for a meeting
+   * @param {number} meetingId - The meeting ID
+   * @returns {Promise<Object>} Recording session info
+   */
+  async startRecording(meetingId) {
+    try {
+      // Check if already recording for this meeting
+      if (this.activeRecordings.has(meetingId)) {
+        const existing = this.activeRecordings.get(meetingId);
+        if (existing.isRecording) {
+          throw new Error('Recording already in progress for this meeting');
+        }
+      }
+
+      // Get meeting details for folder structure
+      const meeting = await this.database.getMeetingById(meetingId);
+      if (!meeting) {
+        throw new Error('Meeting not found');
+      }
+
+      // Create recording directory
+      const recordingDir = await this.createRecordingDirectory(meeting);
+      
+      // Generate unique filename
+      const filename = this.generateFilename(meetingId);
+      const tempPath = path.join(recordingDir, `${filename}.tmp`);
+      const finalPath = path.join(recordingDir, `${filename}.m4a`);
+
+      // Create recording session in database
+      const sessionId = await this.database.startRecordingSession(meetingId, tempPath);
+
+      // Start native audio capture process
+      const captureProcess = await this.startCaptureProcess(tempPath);
+
+      // Create recording session object
+      const recordingSession = {
+        sessionId,
+        meetingId,
+        tempPath,
+        finalPath,
+        filename,
+        isRecording: true,
+        isPaused: false,
+        startTime: new Date(),
+        duration: 0,
+        partNumber: await this.getNextPartNumber(meetingId),
+        process: captureProcess,
+        error: null
+      };
+
+      // Store active recording
+      this.activeRecordings.set(meetingId, recordingSession);
+
+      // Set up process event handlers
+      this.setupProcessHandlers(recordingSession);
+
+      // Start duration timer
+      this.startDurationTimer(recordingSession);
+
+      console.log(`Started recording for meeting ${meetingId}, session ${sessionId}`);
+      return this.getRecordingStatus(meetingId);
+
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Pause recording for a meeting
+   * @param {number} meetingId - The meeting ID
+   * @returns {Promise<Object>} Recording session info
+   */
+  async pauseRecording(meetingId) {
+    const recording = this.activeRecordings.get(meetingId);
+    if (!recording || !recording.isRecording) {
+      throw new Error('No active recording to pause');
+    }
+
+    try {
+      // Send pause signal to native process
+      if (recording.process && !recording.process.killed) {
+        recording.process.kill('SIGUSR1'); // Use signal for pause
+      }
+
+      recording.isPaused = true;
+      console.log(`Paused recording for meeting ${meetingId}`);
+      
+      return this.getRecordingStatus(meetingId);
+    } catch (error) {
+      console.error('Error pausing recording:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Resume recording for a meeting
+   * @param {number} meetingId - The meeting ID
+   * @returns {Promise<Object>} Recording session info
+   */
+  async resumeRecording(meetingId) {
+    const recording = this.activeRecordings.get(meetingId);
+    if (!recording || !recording.isRecording) {
+      throw new Error('No active recording to resume');
+    }
+
+    try {
+      // Send resume signal to native process
+      if (recording.process && !recording.process.killed) {
+        recording.process.kill('SIGUSR2'); // Use signal for resume
+      }
+
+      recording.isPaused = false;
+      console.log(`Resumed recording for meeting ${meetingId}`);
+      
+      return this.getRecordingStatus(meetingId);
+    } catch (error) {
+      console.error('Error resuming recording:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stop recording for a meeting
+   * @param {number} meetingId - The meeting ID
+   * @param {boolean} isSync - Whether this is a synchronous call
+   * @returns {Promise<Object>} Final recording session info
+   */
+  async stopRecording(meetingId, isSync = false) {
+    const recording = this.activeRecordings.get(meetingId);
+    if (!recording || !recording.isRecording) {
+      throw new Error('No active recording to stop');
+    }
+
+    try {
+      // Stop the native process
+      if (recording.process && !recording.process.killed) {
+        recording.process.kill('SIGTERM');
+      }
+
+      // Clear duration timer
+      if (recording.durationTimer) {
+        clearInterval(recording.durationTimer);
+      }
+
+      // Move temp file to final location
+      await this.finalizeRecording(recording);
+
+      // Update database
+      await this.database.endRecordingSession(
+        recording.sessionId,
+        recording.finalPath,
+        recording.duration
+      );
+
+      // Remove from active recordings
+      this.activeRecordings.delete(meetingId);
+
+      console.log(`Stopped recording for meeting ${meetingId}`);
+      return this.getRecordingStatus(meetingId);
+
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      recording.error = error.message;
+      throw error;
+    }
+  }
+
+  /**
+   * Get recording status for a meeting
+   * @param {number} meetingId - The meeting ID
+   * @returns {Object} Recording status
+   */
+  getRecordingStatus(meetingId) {
+    const recording = this.activeRecordings.get(meetingId);
+    
+    if (!recording) {
+      return {
+        sessionId: null,
+        meetingId,
+        isRecording: false,
+        isPaused: false,
+        duration: 0,
+        fileName: null,
+        partNumber: 0,
+        error: null
+      };
+    }
+
+    return {
+      sessionId: recording.sessionId,
+      meetingId: recording.meetingId,
+      isRecording: recording.isRecording,
+      isPaused: recording.isPaused,
+      duration: recording.duration,
+      fileName: recording.filename,
+      partNumber: recording.partNumber,
+      error: recording.error
+    };
+  }
+
+  /**
+   * Get all recording sessions for a meeting
+   * @param {number} meetingId - The meeting ID
+   * @returns {Promise<Array>} Array of recording sessions
+   */
+  async getRecordingSessions(meetingId) {
+    return await this.database.getCompletedRecordings(meetingId);
+  }
+
+  /**
+   * Stop recording synchronously (for page unload)
+   * @param {number} meetingId - The meeting ID
+   * @returns {Object} Final recording session info
+   */
+  stopRecordingSync(meetingId) {
+    const recording = this.activeRecordings.get(meetingId);
+    if (!recording || !recording.isRecording) {
+      console.warn('No active recording to stop synchronously');
+      return { success: false, error: 'No active recording' };
+    }
+
+    try {
+      // Stop the native process
+      if (recording.process && !recording.process.killed) {
+        recording.process.kill('SIGTERM');
+      }
+
+      // Clear duration timer
+      if (recording.durationTimer) {
+        clearInterval(recording.durationTimer);
+      }
+
+      // Mark as stopped
+      recording.isRecording = false;
+
+      // Remove from active recordings
+      this.activeRecordings.delete(meetingId);
+
+      console.log(`Recording stopped synchronously for meeting ${meetingId}`);
+      return { success: true, meetingId };
+
+    } catch (error) {
+      console.error('Error stopping recording synchronously:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Create recording directory for a meeting
+   * @param {Object} meeting - Meeting object
+   * @returns {Promise<string>} Directory path
+   */
+  async createRecordingDirectory(meeting) {
+    // Create directory structure: assets/date/meeting-folder/recordings/
+    const dateStr = meeting.start_time.split('T')[0]; // YYYY-MM-DD
+    const meetingFolder = this.sanitizeFolderName(meeting.title);
+    const recordingDir = path.join(this.assetsPath, dateStr, meetingFolder, 'recordings');
+
+    await fs.mkdir(recordingDir, { recursive: true });
+    return recordingDir;
+  }
+
+  /**
+   * Generate unique filename for recording
+   * @param {number} meetingId - Meeting ID
+   * @returns {string} Filename without extension
+   */
+  generateFilename(meetingId) {
+    const timestamp = new Date().toISOString()
+      .replace(/[:.]/g, '-')
+      .replace(/T/, '-')
+      .replace(/\..+/, '');
+    
+    return `recording-${timestamp}-session${meetingId}`;
+  }
+
+  /**
+   * Get next part number for a meeting
+   * @param {number} meetingId - Meeting ID
+   * @returns {Promise<number>} Next part number
+   */
+  async getNextPartNumber(meetingId) {
+    const sessions = await this.database.getCompletedRecordings(meetingId);
+    const partNumbers = sessions
+      .map(s => s.part_number || 1)
+      .filter(p => p > 0);
+    
+    return partNumbers.length > 0 ? Math.max(...partNumbers) + 1 : 1;
+  }
+
+  /**
+   * Start native audio capture process
+   * @param {string} outputPath - Output file path
+   * @returns {Promise<ChildProcess>} Spawned process
+   */
+  async startCaptureProcess(outputPath) {
+    return new Promise((resolve, reject) => {
+      // For now, create a placeholder process
+      // This will be replaced with actual Swift binary in Phase 2
+      const process = spawn('sleep', ['3600'], { stdio: 'pipe' });
+      
+      process.on('error', (error) => {
+        reject(new Error(`Failed to start audio capture: ${error.message}`));
+      });
+
+      process.on('spawn', () => {
+        resolve(process);
+      });
+    });
+  }
+
+  /**
+   * Set up process event handlers
+   * @param {Object} recordingSession - Recording session object
+   */
+  setupProcessHandlers(recordingSession) {
+    const { process } = recordingSession;
+
+    process.on('exit', (code) => {
+      console.log(`Audio capture process exited with code ${code}`);
+      recordingSession.isRecording = false;
+      
+      if (recordingSession.durationTimer) {
+        clearInterval(recordingSession.durationTimer);
+      }
+    });
+
+    process.on('error', (error) => {
+      console.error('Audio capture process error:', error);
+      recordingSession.error = error.message;
+      recordingSession.isRecording = false;
+    });
+  }
+
+  /**
+   * Start duration timer for recording
+   * @param {Object} recordingSession - Recording session object
+   */
+  startDurationTimer(recordingSession) {
+    recordingSession.durationTimer = setInterval(() => {
+      if (recordingSession.isRecording && !recordingSession.isPaused) {
+        recordingSession.duration = Math.floor(
+          (new Date() - recordingSession.startTime) / 1000
+        );
+      }
+    }, 1000);
+  }
+
+  /**
+   * Finalize recording by moving temp file to final location
+   * @param {Object} recordingSession - Recording session object
+   */
+  async finalizeRecording(recordingSession) {
+    try {
+      // Check if temp file exists
+      const tempExists = await fs.access(recordingSession.tempPath)
+        .then(() => true)
+        .catch(() => false);
+
+      if (tempExists) {
+        // Move temp file to final location
+        await fs.rename(recordingSession.tempPath, recordingSession.finalPath);
+        console.log(`Moved recording from ${recordingSession.tempPath} to ${recordingSession.finalPath}`);
+      } else {
+        console.warn(`Temp file not found: ${recordingSession.tempPath}`);
+      }
+    } catch (error) {
+      console.error('Error finalizing recording:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up all active recordings (for app shutdown)
+   */
+  async cleanup() {
+    console.log('Cleaning up audio recordings...');
+    
+    for (const [meetingId, recording] of this.activeRecordings.entries()) {
+      try {
+        await this.stopRecording(meetingId);
+      } catch (error) {
+        console.error(`Error stopping recording ${meetingId}:`, error);
+      }
+    }
+
+    this.activeRecordings.clear();
+  }
+
+  /**
+   * Sanitize folder name for file system
+   * @param {string} name - Original name
+   * @returns {string} Sanitized name
+   */
+  sanitizeFolderName(name) {
+    return name
+      .replace(/[^a-zA-Z0-9\s-]/g, '') // Remove special chars
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .toLowerCase()
+      .substring(0, 50); // Limit length
+  }
+}
+
+module.exports = AudioRecorder;

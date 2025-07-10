@@ -7,6 +7,8 @@ let quill;
 let currentMeetingId;
 let saveTimeout;
 let isLoading = true;
+let recordingStatusInterval;
+let currentRecordingStatus = null;
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', async () => {
@@ -35,6 +37,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     await loadMeetingData();
     console.log('Meeting data loaded');
+    
+    // Initialize recording functionality
+    await initializeRecording();
+    console.log('Recording initialized');
     
     // Hide loading overlay
     hideLoadingOverlay();
@@ -145,8 +151,24 @@ function initializeEventListeners() {
         }
     });
     
-    // Save before page unload
+    // Save before page unload and stop recording
     window.addEventListener('beforeunload', (e) => {
+        // Stop recording status updates
+        stopRecordingStatusUpdates();
+        
+        // Stop recording if active
+        if (currentRecordingStatus && currentRecordingStatus.isRecording) {
+            console.log('Page unloading, stopping recording');
+            try {
+                // Use synchronous IPC to stop recording before page unload
+                ipcRenderer.sendSync('stop-recording-sync', parseInt(currentMeetingId));
+                console.log('Recording stopped synchronously');
+            } catch (error) {
+                console.error('Error stopping recording synchronously:', error);
+            }
+        }
+        
+        // Save notes
         if (saveTimeout) {
             clearTimeout(saveTimeout);
             console.log('Page unloading, forcing immediate save');
@@ -426,10 +448,129 @@ function setSaveStatus(status) {
 }
 
 // Set recording status indicator
-function setRecordingStatus(isRecording) {
+function setRecordingStatus(recordingStatus) {
     const indicator = document.getElementById('recordingIndicator');
-    indicator.className = `status-indicator ${isRecording ? 'recording' : ''}`;
-    indicator.title = isRecording ? 'Recording' : 'Not Recording';
+    
+    if (!recordingStatus || !recordingStatus.isRecording) {
+        indicator.className = 'status-indicator';
+        indicator.title = 'Not Recording - Click to Start';
+        return;
+    }
+    
+    if (recordingStatus.isPaused) {
+        indicator.className = 'status-indicator paused';
+        indicator.title = `Recording Paused (${formatDuration(recordingStatus.duration)}) - Click to Resume`;
+    } else {
+        indicator.className = 'status-indicator recording';
+        indicator.title = `Recording Active (${formatDuration(recordingStatus.duration)}) - Click to Pause`;
+    }
+}
+
+// Initialize recording functionality
+async function initializeRecording() {
+    try {
+        console.log('Initializing recording for meeting:', currentMeetingId);
+        
+        // Set up recording indicator click handler
+        const recordingIndicator = document.getElementById('recordingIndicator');
+        recordingIndicator.addEventListener('click', handleRecordingIndicatorClick);
+        
+        // Start recording automatically when entering meeting page
+        await startRecording();
+        
+        // Set up periodic status updates
+        startRecordingStatusUpdates();
+        
+    } catch (error) {
+        console.error('Error initializing recording:', error);
+        setRecordingStatus(null);
+    }
+}
+
+// Start recording for current meeting
+async function startRecording() {
+    try {
+        console.log('Starting recording for meeting:', currentMeetingId);
+        const result = await ipcRenderer.invoke('start-recording', parseInt(currentMeetingId));
+        currentRecordingStatus = result;
+        setRecordingStatus(currentRecordingStatus);
+        console.log('Recording started:', result);
+    } catch (error) {
+        console.error('Error starting recording:', error);
+        setRecordingStatus(null);
+    }
+}
+
+// Stop recording for current meeting
+async function stopRecording() {
+    try {
+        console.log('Stopping recording for meeting:', currentMeetingId);
+        const result = await ipcRenderer.invoke('stop-recording', parseInt(currentMeetingId));
+        currentRecordingStatus = result;
+        setRecordingStatus(currentRecordingStatus);
+        console.log('Recording stopped:', result);
+    } catch (error) {
+        console.error('Error stopping recording:', error);
+    }
+}
+
+// Handle recording indicator click (pause/resume)
+async function handleRecordingIndicatorClick() {
+    try {
+        if (!currentRecordingStatus || !currentRecordingStatus.isRecording) {
+            // Not recording, start recording
+            await startRecording();
+            return;
+        }
+        
+        if (currentRecordingStatus.isPaused) {
+            // Currently paused, resume recording
+            console.log('Resuming recording for meeting:', currentMeetingId);
+            const result = await ipcRenderer.invoke('resume-recording', parseInt(currentMeetingId));
+            currentRecordingStatus = result;
+            setRecordingStatus(currentRecordingStatus);
+            console.log('Recording resumed:', result);
+        } else {
+            // Currently recording, pause recording
+            console.log('Pausing recording for meeting:', currentMeetingId);
+            const result = await ipcRenderer.invoke('pause-recording', parseInt(currentMeetingId));
+            currentRecordingStatus = result;
+            setRecordingStatus(currentRecordingStatus);
+            console.log('Recording paused:', result);
+        }
+    } catch (error) {
+        console.error('Error handling recording indicator click:', error);
+    }
+}
+
+// Start periodic recording status updates
+function startRecordingStatusUpdates() {
+    // Update recording status every 2 seconds
+    recordingStatusInterval = setInterval(async () => {
+        try {
+            const status = await ipcRenderer.invoke('get-recording-status', parseInt(currentMeetingId));
+            currentRecordingStatus = status;
+            setRecordingStatus(currentRecordingStatus);
+        } catch (error) {
+            console.error('Error updating recording status:', error);
+        }
+    }, 2000);
+}
+
+// Stop recording status updates
+function stopRecordingStatusUpdates() {
+    if (recordingStatusInterval) {
+        clearInterval(recordingStatusInterval);
+        recordingStatusInterval = null;
+    }
+}
+
+// Format duration in seconds to MM:SS format
+function formatDuration(seconds) {
+    if (!seconds || seconds < 0) return '00:00';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
 // Load attachments for this meeting

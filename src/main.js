@@ -390,6 +390,11 @@ ipcMain.handle('delete-meeting-markdown', async (event, meetingId) => {
   }
 });
 
+// Debug logging handler
+ipcMain.handle('log-to-main', async (event, message) => {
+  console.log(message);
+});
+
 // Synchronous version for stopping recording on page unload
 ipcMain.on('stop-recording-sync', (event, meetingId) => {
   try {

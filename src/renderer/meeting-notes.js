@@ -139,13 +139,31 @@ function initializeQuillEditor() {
 // Initialize event listeners
 function initializeEventListeners() {
     // Back button - wait for save before navigating
-    document.getElementById('backButton').addEventListener('click', async () => {
-        await handleNavigationBack();
-    });
+    const backButton = document.getElementById('backButton');
+    console.log('🔗 Setting up back button listener, element found:', !!backButton);
+    
+    if (backButton) {
+        backButton.addEventListener('click', (e) => {
+            console.log('🖱️ Back button clicked!');
+            e.preventDefault(); // Prevent default navigation immediately
+            e.stopPropagation(); // Stop event bubbling
+            
+            // Run async handler without blocking preventDefault
+            handleNavigationBack().catch(error => {
+                console.error('Error in navigation handler:', error);
+                // Still navigate even if handler fails
+                window.location.href = 'index.html';
+            });
+        });
+    } else {
+        console.error('❌ Back button element not found!');
+    }
     
     // Escape key to go back - wait for save before navigating
     document.addEventListener('keydown', async (e) => {
         if (e.key === 'Escape' || (e.metaKey && e.key === 'ArrowLeft')) {
+            console.log('⌨️ Escape/back key pressed!');
+            e.preventDefault(); // Prevent default behavior
             await handleNavigationBack();
         }
     });
@@ -260,6 +278,7 @@ async function loadMeetingData() {
         console.log('Loading notes for meeting:', meeting.id, 'Notes content:', meeting.notes_content);
         // Store initial notes content for change detection
         initialNotesContent = meeting.notes_content || null;
+        console.log('🔢 Initial notes content stored:', initialNotesContent ? 'exists' : 'null');
         
         if (meeting.notes_content) {
             // Set loading to true temporarily while setting content
@@ -828,42 +847,55 @@ async function removeAttachmentTile(filename) {
 
 // Handle navigation back to nav page
 async function handleNavigationBack() {
+    console.log('🔙 handleNavigationBack called');
+    
+    // Also log to main process so we can see it in terminal
+    ipcRenderer.invoke('log-to-main', '🔙 MARKDOWN EXPORT: handleNavigationBack called');
+    
     try {
         // Ensure notes are saved first
+        console.log('💾 Ensuring notes are saved...');
         await ensureNotesAreSaved();
         
         // Get current notes content
         const currentContent = quill.getContents();
         const currentContentStr = JSON.stringify(currentContent);
         
-        // Check if notes have changed
-        let notesChanged = false;
-        if (initialNotesContent !== currentContentStr) {
-            // Notes have changed since we loaded the page
-            notesChanged = true;
-            console.log('Notes have changed, will export markdown');
+        console.log('📝 Initial notes content:', initialNotesContent ? 'exists' : 'null');
+        console.log('📝 Current notes content length:', currentContentStr.length);
+        
+        ipcRenderer.invoke('log-to-main', `📝 MARKDOWN EXPORT: Initial=${initialNotesContent ? 'exists' : 'null'}, Current length=${currentContentStr.length}`);
+        
+        // Always export markdown (replace existing file)
+        console.log('📄 Always exporting markdown file...');
+        ipcRenderer.invoke('log-to-main', '📄 MARKDOWN EXPORT: Always exporting markdown file...');
+        
+        // Delete existing markdown if any
+        console.log('🗑️ Deleting existing markdown if any...');
+        await ipcRenderer.invoke('delete-meeting-markdown', currentMeetingId);
+        
+        // Export new markdown file
+        console.log('📄 Exporting new markdown file...');
+        const exportResult = await ipcRenderer.invoke('export-meeting-notes-markdown', currentMeetingId);
+        if (exportResult.success) {
+            console.log('✅ Meeting notes exported to markdown:', exportResult.filename);
+            console.log('📂 File path:', exportResult.filePath);
+            ipcRenderer.invoke('log-to-main', `✅ MARKDOWN EXPORT: Success! File: ${exportResult.filename}`);
+        } else {
+            console.error('❌ Failed to export meeting notes:', exportResult.error);
+            ipcRenderer.invoke('log-to-main', `❌ MARKDOWN EXPORT: Failed - ${exportResult.error}`);
         }
         
-        if (notesChanged) {
-            // Delete existing markdown if any
-            await ipcRenderer.invoke('delete-meeting-markdown', currentMeetingId);
-            
-            // Export new markdown file
-            const exportResult = await ipcRenderer.invoke('export-meeting-notes-markdown', currentMeetingId);
-            if (exportResult.success) {
-                console.log('Meeting notes exported to markdown:', exportResult.filename);
-            } else {
-                console.error('Failed to export meeting notes:', exportResult.error);
-            }
-        } else {
-            console.log('Notes unchanged, skipping markdown export');
-        }
+        // Small delay for logs (can be removed later)
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Navigate back to index
+        console.log('🏠 Navigating back to index.html');
         window.location.href = 'index.html';
         
     } catch (error) {
-        console.error('Error handling navigation back:', error);
+        console.error('❌ Error handling navigation back:', error);
+        ipcRenderer.invoke('log-to-main', `❌ MARKDOWN EXPORT: Error - ${error.message}`);
         // Still navigate even if export fails
         window.location.href = 'index.html';
     }

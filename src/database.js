@@ -426,10 +426,10 @@ class Database {
       // Generate markdown content
       const markdownContent = generateMarkdownDocument(meeting);
 
-      // Determine file path (alongside audio recordings)
-      const userDataPath = app.getPath('userData');
+      // Determine file path (alongside audio recordings in project assets)
+      const projectRoot = path.dirname(path.dirname(__dirname)); // Go up from src/
       const dateStr = meeting.start_time.split('T')[0];
-      const meetingDir = path.join(userDataPath, 'assets', dateStr, meeting.folder_name);
+      const meetingDir = path.join(projectRoot, 'assets', dateStr, meeting.folder_name);
       await fs.ensureDir(meetingDir);
 
       // Create filename
@@ -473,11 +473,11 @@ class Database {
         return { success: false, error: 'Meeting not found' };
       }
 
-      // Determine file path
-      const userDataPath = app.getPath('userData');
+      // Determine file path (same as audio recordings)
+      const projectRoot = path.dirname(path.dirname(__dirname)); // Go up from src/
       const dateStr = meeting.start_time.split('T')[0];
       const filename = `${meeting.folder_name}-notes.md`;
-      const filePath = path.join(userDataPath, 'assets', dateStr, meeting.folder_name, filename);
+      const filePath = path.join(projectRoot, 'assets', dateStr, meeting.folder_name, filename);
 
       // Check if file exists and delete it
       if (await fs.pathExists(filePath)) {

@@ -261,10 +261,10 @@ class AudioRecorder {
    * @returns {Promise<string>} Directory path
    */
   async createRecordingDirectory(meeting) {
-    // Create directory structure: assets/date/meeting-folder/recordings/
+    // Create directory structure: assets/date/meeting-folder/
     const dateStr = meeting.start_time.split('T')[0]; // YYYY-MM-DD
     const meetingFolder = this.sanitizeFolderName(meeting.title);
-    const recordingDir = path.join(this.assetsPath, dateStr, meetingFolder, 'recordings');
+    const recordingDir = path.join(this.assetsPath, dateStr, meetingFolder);
 
     await fs.mkdir(recordingDir, { recursive: true });
     return recordingDir;

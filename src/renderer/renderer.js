@@ -563,9 +563,10 @@ class MeetingApp {
             return new Date(b.start_time) - new Date(a.start_time);
         });
 
-        // Separate past and non-past meetings
+        // Separate meetings by status
         const pastMeetings = [];
-        const nonPastMeetings = [];
+        const activeMeetings = [];
+        const upcomingMeetings = [];
         
         sortedMeetings.forEach(meeting => {
             const startTime = new Date(meeting.start_time);
@@ -574,8 +575,10 @@ class MeetingApp {
             
             if (status.class === 'past') {
                 pastMeetings.push(meeting);
+            } else if (status.class === 'active') {
+                activeMeetings.push(meeting);
             } else {
-                nonPastMeetings.push(meeting);
+                upcomingMeetings.push(meeting);
             }
         });
 
@@ -583,7 +586,7 @@ class MeetingApp {
         const limitedPastMeetings = pastMeetings.slice(0, 2);
         
         // Combine and re-sort by original time order
-        const combinedMeetings = [...limitedPastMeetings, ...nonPastMeetings];
+        const combinedMeetings = [...limitedPastMeetings, ...activeMeetings, ...upcomingMeetings];
         return combinedMeetings.sort((a, b) => {
             return new Date(a.start_time) - new Date(b.start_time);
         });

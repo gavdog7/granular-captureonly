@@ -212,11 +212,11 @@ class UploadService {
     try {
       const drive = this.googleDriveService.drive;
 
-      // 1. Ensure "Granular Meetings" folder exists
-      let granularFolderId = await this.findOrCreateFolder(drive, 'Granular Meetings', null);
+      // 1. Ensure "Notes" folder exists
+      let notesFolderId = await this.findOrCreateFolder(drive, 'Notes', null);
 
       // 2. Ensure date folder exists (e.g., "2025-07-10")
-      let dateFolderId = await this.findOrCreateFolder(drive, dateStr, granularFolderId);
+      let dateFolderId = await this.findOrCreateFolder(drive, dateStr, notesFolderId);
 
       // 3. Ensure meeting folder exists (e.g., "team-standup")
       let meetingFolderId = await this.findOrCreateFolder(drive, meetingFolderName, dateFolderId);

@@ -19,6 +19,7 @@ assets/
 *.wav
 *.mp3
 *.mp4
+meetings.db
 
 # Environment
 .env
@@ -34,6 +35,9 @@ assets/
 # Build
 build/
 bin/
+.build/
+*.build/
+src/native/audio-capture/.build/
 
 # Temporary files
 temp/

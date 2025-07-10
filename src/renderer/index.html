@@ -50,7 +50,7 @@
         }
 
         .new-note-btn {
-            background: #8b5cf6;
+            background: #1a73e8;
             color: white;
             border: none;
             padding: 6px 16px;
@@ -67,7 +67,7 @@
         }
 
         .new-note-btn:hover {
-            background: #7c3aed;
+            background: #1557b0;
         }
 
         /* Content wrapper - matching notes page */
@@ -199,7 +199,7 @@
         }
 
         .date-badge {
-            background: #8b5cf6;
+            background: #999;
             color: white;
             padding: 4px 8px;
             border-radius: 4px;
@@ -293,7 +293,7 @@
         }
 
         .meeting-item.past .date-badge {
-            background: #999;
+            background: #bbb;
         }
 
         /* Smooth Transitions */
@@ -307,10 +307,18 @@
         }
 
         /* Focus Styles */
-        .new-note-btn:focus,
-        .excel-upload-btn:focus,
-        .show-more-btn:focus {
+        .new-note-btn:focus {
+            outline: 2px solid #1a73e8;
+            outline-offset: 2px;
+        }
+        
+        .excel-upload-btn:focus {
             outline: 2px solid #8b5cf6;
+            outline-offset: 2px;
+        }
+        
+        .show-more-btn:focus {
+            outline: 2px solid #d0d0d0;
             outline-offset: 2px;
         }
     </style>

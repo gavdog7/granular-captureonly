@@ -579,7 +579,10 @@ body {
 }
 
 /* Focus Styles */
-.back-arrow:focus,
+.back-arrow:focus {
+    outline: none;
+}
+
 #participantInput:focus,
 .add-participant-btn:focus {
     outline: 2px solid #8b5cf6;

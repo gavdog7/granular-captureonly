@@ -43,18 +43,25 @@ class AudioRecordingManager {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         
-        // Create output file with M4A format
+        // Create output file with simpler PCM format first
         let outputURL = URL(fileURLWithPath: outputPath)
         
-        // Set up M4A file settings
+        // Use a simpler format that's more likely to work
         let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 44100,
-            AVNumberOfChannelsKey: 2,
-            AVEncoderBitRateKey: bitrate
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 44100.0,
+            AVNumberOfChannelsKey: 1,  // Start with mono
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsNonInterleaved: false
         ]
         
+        print("Creating audio file with settings: \(settings)")
         outputFile = try AVAudioFile(forWriting: outputURL, settings: settings)
+        
+        print("Input node format: \(recordingFormat)")
+        print("Setting up audio tap...")
         
         // Set up audio tap for recording
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, time in
@@ -66,12 +73,15 @@ class AudioRecordingManager {
                     try outputFile.write(from: buffer)
                 }
             } catch {
+                print("Error writing audio buffer: \(error.localizedDescription)")
                 self.logger.error("Error writing audio buffer: \(error.localizedDescription)")
             }
         }
         
+        print("Starting audio engine...")
         // Start the engine
         try audioEngine.start()
+        print("Audio engine started successfully")
         
         // Set up signal handlers for pause/resume
         setupSignalHandlers()
@@ -102,25 +112,38 @@ class AudioRecordingManager {
     }
     
     private func requestMicrophonePermission() throws {
-        // For macOS, we need to handle microphone permissions differently
-        // The system will automatically prompt for permission when we try to access the microphone
-        // We can check the current authorization status
-        
+        // For macOS, check current microphone permission status
         let semaphore = DispatchSemaphore(value: 0)
         var permissionGranted = false
         
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        print("Current microphone permission status: \(status.rawValue)")
+        
+        switch status {
         case .authorized:
+            print("Microphone permission already granted")
             permissionGranted = true
-        case .denied, .restricted:
+        case .denied:
+            print("Microphone permission denied by user")
+            print("Please grant microphone permission in System Preferences > Security & Privacy > Privacy > Microphone")
+            throw AudioCaptureError.permissionDenied
+        case .restricted:
+            print("Microphone access restricted")
             throw AudioCaptureError.permissionDenied
         case .notDetermined:
+            print("Requesting microphone permission...")
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 permissionGranted = granted
+                if granted {
+                    print("Microphone permission granted by user")
+                } else {
+                    print("Microphone permission denied by user")
+                }
                 semaphore.signal()
             }
             semaphore.wait()
         @unknown default:
+            print("Unknown microphone permission status")
             throw AudioCaptureError.permissionDenied
         }
         

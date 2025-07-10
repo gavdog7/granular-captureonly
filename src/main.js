@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
 const Database = require('./database');
@@ -162,6 +162,22 @@ async function initializeApp() {
     // 🧪 TEST MODE: Override date for testing
     // TO DISABLE: Comment out the line below
     setupTestDate('2025-07-10'); // Thursday, July 10, 2025
+    
+    // Request microphone permission for audio recording
+    if (process.platform === 'darwin') {
+      const microphonePermission = systemPreferences.getMediaAccessStatus('microphone');
+      console.log('Microphone permission status:', microphonePermission);
+      
+      if (microphonePermission !== 'granted') {
+        console.log('Requesting microphone permission...');
+        try {
+          const granted = await systemPreferences.askForMediaAccess('microphone');
+          console.log('Microphone permission granted:', granted);
+        } catch (error) {
+          console.error('Error requesting microphone permission:', error);
+        }
+      }
+    }
     
     database = new Database();
     await database.initialize();

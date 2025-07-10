@@ -48,8 +48,15 @@ The AudioRecorder class in `src/audio-recorder.js` manages this binary process:
 
 1. Spawns the binary process for recording
 2. Sends signals for pause/resume control
-3. Manages file system operations
+3. Manages file system operations in project assets folder
 4. Handles crash recovery
+
+## File Storage
+
+Audio files are saved in the project's assets directory:
+```
+assets/YYYY-MM-DD/meeting-folder-name/recordings/recording-*.m4a
+```
 
 ## Permissions
 

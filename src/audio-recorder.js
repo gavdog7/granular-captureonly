@@ -7,8 +7,8 @@ class AudioRecorder {
   constructor(database) {
     this.database = database;
     this.activeRecordings = new Map(); // meetingId -> recording session
-    this.binaryPath = path.join(__dirname, 'native', 'audio-capture', 'audio-capture');
-    this.assetsPath = path.join(app.getPath('userData'), 'assets');
+    this.binaryPath = path.join(__dirname, 'native', 'audio-capture', '.build', 'release', 'audio-capture');
+    this.assetsPath = path.join(__dirname, '..', 'assets'); // Save in project assets folder
   }
 
   /**
@@ -310,15 +310,36 @@ class AudioRecorder {
    */
   async startCaptureProcess(outputPath) {
     return new Promise((resolve, reject) => {
-      // For now, create a placeholder process
-      // This will be replaced with actual Swift binary in Phase 2
-      const process = spawn('sleep', ['3600'], { stdio: 'pipe' });
+      // Use the built Swift binary for real audio recording
+      console.log(`Starting audio capture process: ${this.binaryPath}`);
+      console.log(`Output path: ${outputPath}`);
+      
+      const process = spawn(this.binaryPath, [
+        'start',
+        '--output', outputPath,
+        '--bitrate', '32000'
+      ], { 
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: false
+      });
+      
+      // Log stdout from the binary
+      process.stdout.on('data', (data) => {
+        console.log(`Audio capture stdout: ${data.toString().trim()}`);
+      });
+      
+      // Log stderr from the binary
+      process.stderr.on('data', (data) => {
+        console.error(`Audio capture stderr: ${data.toString().trim()}`);
+      });
       
       process.on('error', (error) => {
+        console.error('Audio capture process error:', error);
         reject(new Error(`Failed to start audio capture: ${error.message}`));
       });
 
       process.on('spawn', () => {
+        console.log(`Audio capture process spawned with PID: ${process.pid}`);
         resolve(process);
       });
     });

@@ -29,13 +29,8 @@ class AudioRecordingManager {
     func startRecording(outputPath: String, bitrate: Int = 32000) throws {
         logger.info("Starting audio recording to: \(outputPath)")
         
-        // Request audio capture permission
-        try requestAudioPermission()
-        
-        // Set up audio session
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-        try audioSession.setActive(true)
+        // Request microphone permission (macOS approach)
+        try requestMicrophonePermission()
         
         // Create audio engine
         audioEngine = AVAudioEngine()
@@ -44,31 +39,32 @@ class AudioRecordingManager {
             throw AudioCaptureError.engineInitializationFailed
         }
         
-        // Set up recording format (32kbps AAC)
-        let recordingFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 44100,
-            channels: 2,
-            interleaved: false
-        )
-        
-        guard let format = recordingFormat else {
-            throw AudioCaptureError.formatCreationFailed
-        }
-        
-        // Create output file
-        let outputURL = URL(fileURLWithPath: outputPath)
-        outputFile = try AVAudioFile(forWriting: outputURL, settings: format.settings)
-        
-        // Set up audio tap
+        // Set up recording format for macOS
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         
+        // Create output file with M4A format
+        let outputURL = URL(fileURLWithPath: outputPath)
+        
+        // Set up M4A file settings
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 2,
+            AVEncoderBitRateKey: bitrate
+        ]
+        
+        outputFile = try AVAudioFile(forWriting: outputURL, settings: settings)
+        
+        // Set up audio tap for recording
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, time in
             guard let self = self, !self.isPaused else { return }
             
             do {
-                try self.outputFile?.write(from: buffer)
+                // Convert buffer format if needed
+                if let outputFile = self.outputFile {
+                    try outputFile.write(from: buffer)
+                }
             } catch {
                 self.logger.error("Error writing audio buffer: \(error.localizedDescription)")
             }
@@ -105,17 +101,21 @@ class AudioRecordingManager {
         logger.info("Audio recording stopped successfully")
     }
     
-    private func requestAudioPermission() throws {
+    private func requestMicrophonePermission() throws {
+        // For macOS, we need to handle microphone permissions differently
+        // The system will automatically prompt for permission when we try to access the microphone
+        // We can check the current authorization status
+        
         let semaphore = DispatchSemaphore(value: 0)
         var permissionGranted = false
         
-        switch AVAudioSession.sharedInstance().recordPermission {
-        case .granted:
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
             permissionGranted = true
-        case .denied:
+        case .denied, .restricted:
             throw AudioCaptureError.permissionDenied
-        case .undetermined:
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
                 permissionGranted = granted
                 semaphore.signal()
             }
@@ -147,6 +147,18 @@ class AudioRecordingManager {
     }
 }
 
+// MARK: - Global recording manager instance
+var globalRecordingManager: AudioRecordingManager?
+
+// MARK: - Signal handler functions
+func handlePauseSignal() {
+    globalRecordingManager?.pauseRecording()
+}
+
+func handleResumeSignal() {
+    globalRecordingManager?.resumeRecording()
+}
+
 // MARK: - Error Types
 enum AudioCaptureError: Error, LocalizedError {
     case permissionDenied
@@ -158,7 +170,7 @@ enum AudioCaptureError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .permissionDenied:
-            return "Audio recording permission denied"
+            return "Microphone permission denied"
         case .engineInitializationFailed:
             return "Failed to initialize audio engine"
         case .formatCreationFailed:
@@ -264,7 +276,7 @@ func printUsage() {
     Usage: audio-capture <action> [options]
     
     Actions:
-        start       Start audio recording
+        start       Start microphone recording
         pause       Pause active recording
         resume      Resume paused recording
         stop        Stop active recording
@@ -280,6 +292,8 @@ func printUsage() {
         audio-capture pause --session-id 123
         audio-capture resume --session-id 123
         audio-capture stop --session-id 123
+    
+    Note: This captures microphone input, not system audio on macOS.
     """)
 }
 
@@ -290,6 +304,11 @@ func main() {
     }
     
     let recordingManager = AudioRecordingManager()
+    globalRecordingManager = recordingManager
+    
+    // Set up signal handlers
+    signal(SIGUSR1, { _ in handlePauseSignal() })
+    signal(SIGUSR2, { _ in handleResumeSignal() })
     
     do {
         switch command.action {
@@ -302,24 +321,28 @@ func main() {
             try recordingManager.startRecording(outputPath: outputPath, bitrate: command.bitrate)
             
             // Keep the process running
-            print("Recording started. Press Ctrl+C to stop.")
+            print("Recording started. Send SIGUSR1 to pause, SIGUSR2 to resume, SIGTERM to stop.")
+            print("Process ID: \(ProcessInfo.processInfo.processIdentifier)")
+            
+            // Run the main run loop
             RunLoop.main.run()
             
         case .pause:
-            recordingManager.pauseRecording()
-            print("Recording paused")
+            print("Pause functionality requires process ID management")
+            print("Use kill -USR1 <process_id> to pause recording")
             
         case .resume:
-            recordingManager.resumeRecording()
-            print("Recording resumed")
+            print("Resume functionality requires process ID management")
+            print("Use kill -USR2 <process_id> to resume recording")
             
         case .stop:
-            recordingManager.stopRecording()
-            print("Recording stopped")
+            print("Stop functionality requires process ID management")
+            print("Use kill -TERM <process_id> to stop recording")
             
         case .version:
             print("Granular Audio Capture v1.0.0")
-            print("macOS System Audio Recording Utility")
+            print("macOS Microphone Recording Utility")
+            print("Built with Swift 6.1")
         }
     } catch {
         print("Error: \(error.localizedDescription)")

@@ -661,4 +661,13 @@ ipcMain.handle('get-recording-sessions', async (event, meetingId) => {
   }
 });
 
+ipcMain.handle('get-participant-suggestions', async (event, searchTerm) => {
+  try {
+    return await database.getParticipantSuggestions(searchTerm);
+  } catch (error) {
+    console.error('Error getting participant suggestions:', error);
+    return [];
+  }
+});
+
 module.exports = { database, meetingLoader, audioRecorder, store };

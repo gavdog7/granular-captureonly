@@ -10,6 +10,9 @@ let isLoading = true;
 let recordingStatusInterval;
 let currentRecordingStatus = null;
 let initialNotesContent = null; // Track initial notes content for change detection
+let selectedSuggestionIndex = -1;
+let currentSuggestions = [];
+let suggestionTimeout;
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', async () => {
@@ -234,18 +237,53 @@ function initializeEventListeners() {
     const inlineInput = document.getElementById('participantInlineInput');
     inlineInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
-            addParticipantFromInline();
+            e.preventDefault();
+            if (selectedSuggestionIndex >= 0 && currentSuggestions[selectedSuggestionIndex]) {
+                selectSuggestion(currentSuggestions[selectedSuggestionIndex].email);
+            } else {
+                addParticipantFromInline();
+            }
         }
         if (e.key === 'Escape') {
             hideInlineParticipantInput();
         }
     });
     
-    inlineInput.addEventListener('blur', () => {
-        // Hide if empty when clicking away
-        if (!inlineInput.value.trim()) {
-            hideInlineParticipantInput();
+    inlineInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            if (currentSuggestions.length > 0) {
+                selectSuggestion(currentSuggestions[0].email);
+            }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            navigateSuggestions(1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            navigateSuggestions(-1);
         }
+    });
+    
+    inlineInput.addEventListener('input', (e) => {
+        const value = e.target.value.trim();
+        if (value.length >= 1) {
+            clearTimeout(suggestionTimeout);
+            suggestionTimeout = setTimeout(() => {
+                fetchParticipantSuggestions(value);
+            }, 300);
+        } else {
+            hideSuggestions();
+        }
+    });
+    
+    inlineInput.addEventListener('blur', (e) => {
+        // Delay hiding to allow click on suggestions
+        setTimeout(() => {
+            if (!inlineInput.value.trim()) {
+                hideInlineParticipantInput();
+            }
+            hideSuggestions();
+        }, 200);
     });
 }
 
@@ -809,6 +847,8 @@ function showInlineParticipantInput() {
     inputPill.style.display = 'inline-flex';
     input.value = '';
     input.focus();
+    selectedSuggestionIndex = -1;
+    currentSuggestions = [];
 }
 
 function hideInlineParticipantInput() {
@@ -817,6 +857,113 @@ function hideInlineParticipantInput() {
     
     inputPill.style.display = 'none';
     input.value = '';
+    hideSuggestions();
+}
+
+// Participant suggestion functions
+async function fetchParticipantSuggestions(searchTerm) {
+    try {
+        const suggestions = await ipcRenderer.invoke('get-participant-suggestions', searchTerm);
+        currentSuggestions = suggestions;
+        selectedSuggestionIndex = -1;
+        displaySuggestions(suggestions, searchTerm);
+    } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        hideSuggestions();
+    }
+}
+
+function displaySuggestions(suggestions, searchTerm) {
+    const container = document.getElementById('participantSuggestions');
+    
+    if (suggestions.length === 0) {
+        hideSuggestions();
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    suggestions.forEach((suggestion, index) => {
+        const item = document.createElement('div');
+        item.className = 'suggestion-item';
+        if (index === selectedSuggestionIndex) {
+            item.classList.add('selected');
+        }
+        
+        // Highlight matching part
+        const email = suggestion.email;
+        const matchIndex = email.toLowerCase().indexOf(searchTerm.toLowerCase());
+        
+        if (matchIndex >= 0) {
+            const before = email.substring(0, matchIndex);
+            const match = email.substring(matchIndex, matchIndex + searchTerm.length);
+            const after = email.substring(matchIndex + searchTerm.length);
+            
+            item.innerHTML = `
+                ${before}<strong>${match}</strong>${after}
+                <span class="suggestion-frequency">${suggestion.frequency} meetings</span>
+            `;
+        } else {
+            item.innerHTML = `
+                ${email}
+                <span class="suggestion-frequency">${suggestion.frequency} meetings</span>
+            `;
+        }
+        
+        item.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            selectSuggestion(suggestion.email);
+        });
+        
+        item.addEventListener('mouseenter', () => {
+            selectedSuggestionIndex = index;
+            updateSuggestionSelection();
+        });
+        
+        container.appendChild(item);
+    });
+    
+    container.style.display = 'block';
+}
+
+function hideSuggestions() {
+    const container = document.getElementById('participantSuggestions');
+    container.style.display = 'none';
+    container.innerHTML = '';
+    currentSuggestions = [];
+    selectedSuggestionIndex = -1;
+}
+
+function navigateSuggestions(direction) {
+    if (currentSuggestions.length === 0) return;
+    
+    selectedSuggestionIndex += direction;
+    
+    if (selectedSuggestionIndex < 0) {
+        selectedSuggestionIndex = currentSuggestions.length - 1;
+    } else if (selectedSuggestionIndex >= currentSuggestions.length) {
+        selectedSuggestionIndex = 0;
+    }
+    
+    updateSuggestionSelection();
+}
+
+function updateSuggestionSelection() {
+    const items = document.querySelectorAll('.suggestion-item');
+    items.forEach((item, index) => {
+        if (index === selectedSuggestionIndex) {
+            item.classList.add('selected');
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+function selectSuggestion(email) {
+    const input = document.getElementById('participantInlineInput');
+    input.value = email;
+    addParticipantFromInline();
+    hideSuggestions();
 }
 
 // Attachment management functions

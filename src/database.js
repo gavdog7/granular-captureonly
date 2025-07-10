@@ -647,6 +647,40 @@ class Database {
       throw error;
     }
   }
+
+  async getParticipantSuggestions(searchTerm = '') {
+    try {
+      // Get all participants from all meetings
+      const meetings = await this.all('SELECT participants FROM meetings WHERE participants IS NOT NULL');
+      
+      // Count frequency of each email
+      const emailFrequency = {};
+      meetings.forEach(meeting => {
+        try {
+          const participants = JSON.parse(meeting.participants);
+          participants.forEach(email => {
+            if (email && typeof email === 'string') {
+              emailFrequency[email] = (emailFrequency[email] || 0) + 1;
+            }
+          });
+        } catch (e) {
+          console.error('Error parsing participants:', e);
+        }
+      });
+
+      // Filter by search term (case-insensitive)
+      const filtered = Object.entries(emailFrequency)
+        .filter(([email]) => email.toLowerCase().startsWith(searchTerm.toLowerCase()))
+        .sort((a, b) => b[1] - a[1]) // Sort by frequency descending
+        .slice(0, 10) // Top 10 results
+        .map(([email, frequency]) => ({ email, frequency }));
+
+      return filtered;
+    } catch (error) {
+      console.error('Error getting participant suggestions:', error);
+      return [];
+    }
+  }
 }
 
 module.exports = Database;

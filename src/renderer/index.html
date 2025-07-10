@@ -12,51 +12,80 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: #f5f5f7;
-            padding: 20px;
-            padding-top: 40px; /* Account for titlebar */
-        }
-
-        .app-container {
-            max-width: 1000px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            margin: 0;
+            padding: 0;
+            background: transparent;
             overflow: hidden;
         }
 
+        .container {
+            max-width: none;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+            min-height: 100vh;
+            position: relative;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: flex;
+            flex-direction: column;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 0 1px #f5f5f5;
+        }
+
+        /* Header - matching notes page */
         .header {
-            padding: 20px 30px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: white;
-            border-bottom: 1px solid #e5e5e7;
+            height: 38px;
+            padding: 0 8px;
+            background: #f5f5f5;
+            border-bottom: none;
+            -webkit-app-region: drag;
+        }
+
+        .header-spacer {
+            width: 80px; /* Account for traffic lights */
         }
 
         .new-note-btn {
-            background: #007aff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
+            background: transparent;
+            color: #666;
+            border: 1px solid #ccc;
+            padding: 6px 16px;
+            border-radius: 6px;
             cursor: pointer;
-            font-size: 16px;
-            font-weight: 500;
-            transition: background 0.2s;
+            font-size: 13px;
+            font-weight: normal;
+            transition: all 0.2s ease;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            height: 28px;
+            -webkit-app-region: no-drag;
+            margin-right: 12px;
         }
 
         .new-note-btn:hover {
-            background: #0056b3;
+            border-color: #999;
+            background: rgba(0, 0, 0, 0.02);
+        }
+
+        /* Content wrapper - matching notes page */
+        .content-wrapper {
+            background: #fefffe;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
         }
 
         .content {
-            padding: 30px;
+            padding: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .section-header {
@@ -67,55 +96,56 @@
         }
 
         .section-title {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 600;
-            color: #1d1d1f;
+            color: #1a1a1a;
+            margin: 0;
         }
 
         .header-buttons {
             display: flex;
-            gap: 12px;
+            gap: 8px;
             align-items: center;
         }
 
         .excel-upload-btn {
-            background: #f6f6f6;
-            border: 1px solid #d1d1d6;
-            padding: 8px 12px;
+            background: transparent;
+            border: 1px solid #ccc;
+            padding: 6px 12px;
             border-radius: 6px;
             cursor: pointer;
             font-size: 16px;
-            color: #424245;
+            color: #666;
             transition: all 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
-            min-width: 40px;
-            height: 36px;
+            min-width: 36px;
+            height: 28px;
         }
 
         .excel-upload-btn:hover {
-            background: #e5e5e7;
-            transform: translateY(-1px);
-        }
-
-        .excel-upload-btn:active {
-            transform: translateY(0);
+            border-color: #999;
+            background: rgba(0, 0, 0, 0.02);
         }
 
         .show-more-btn {
-            background: #f6f6f6;
-            border: 1px solid #d1d1d6;
-            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid #ccc;
+            padding: 6px 12px;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 14px;
-            color: #424245;
+            font-size: 13px;
+            color: #666;
             transition: all 0.2s;
+            height: 28px;
+            display: flex;
+            align-items: center;
         }
 
         .show-more-btn:hover {
-            background: #e5e5e7;
+            border-color: #999;
+            background: rgba(0, 0, 0, 0.02);
         }
 
         .meetings-container {
@@ -125,39 +155,35 @@
         .no-meetings {
             text-align: center;
             padding: 60px 20px;
-            color: #6e6e73;
+            color: #788497;
         }
 
         .no-meetings h2 {
-            font-size: 24px;
+            font-size: 20px;
             margin-bottom: 10px;
             font-weight: 500;
+            color: #666;
         }
 
         .no-meetings p {
-            font-size: 16px;
+            font-size: 14px;
             margin-bottom: 20px;
         }
 
-        .meetings-card {
-            background: #f6f6f6;
-            border-radius: 12px;
-            padding: 20px;
-        }
-
+        /* Simplified meeting items */
         .meeting-item {
-            background: white;
+            background: transparent;
             border-radius: 8px;
             padding: 16px;
             margin-bottom: 12px;
             cursor: pointer;
             transition: all 0.2s;
-            border: 1px solid #e5e5e7;
+            border: 1px solid #e0e0e0;
         }
 
         .meeting-item:hover {
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            transform: translateY(-1px);
+            background: rgba(0, 0, 0, 0.02);
+            border-color: #ccc;
         }
 
         .meeting-item:last-child {
@@ -173,12 +199,12 @@
         .date-badge {
             background: #8b5cf6;
             color: white;
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
-            min-width: 52px;
+            min-width: 48px;
             text-align: center;
             flex-shrink: 0;
         }
@@ -188,27 +214,27 @@
         }
 
         .meeting-title {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
-            color: #1d1d1f;
+            color: #1a1a1a;
             margin-bottom: 4px;
         }
 
         .meeting-time {
-            font-size: 16px;
-            color: #424245;
+            font-size: 14px;
+            color: #666;
             margin-bottom: 4px;
         }
 
         .meeting-participants {
-            font-size: 14px;
-            color: #6e6e73;
+            font-size: 13px;
+            color: #788497;
         }
 
         .loading {
             text-align: center;
             padding: 40px;
-            color: #6e6e73;
+            color: #788497;
         }
 
         .loading::after {
@@ -217,7 +243,7 @@
             width: 20px;
             height: 20px;
             margin-left: 10px;
-            border: 2px solid #007aff;
+            border: 2px solid #8b5cf6;
             border-radius: 50%;
             border-top-color: transparent;
             animation: spin 1s linear infinite;
@@ -228,92 +254,91 @@
         }
 
         .error-message {
-            background: #ffebee;
-            color: #c62828;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 4px solid #f44336;
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 16px 0;
+            font-size: 14px;
+            border-left: 3px solid #e88;
         }
 
         .success-message {
-            background: #e8f5e8;
-            color: #2e7d32;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 4px solid #4caf50;
+            background: #efe;
+            color: #363;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 16px 0;
+            font-size: 14px;
+            border-left: 3px solid #8c8;
         }
 
-        .status-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .status-upcoming {
-            background: #ff9500;
-        }
-
-        .status-active {
-            background: #30d158;
-        }
-
-        .status-past {
-            background: #8e8e93;
-        }
-
-        /* Past meeting styling - darker grey background */
+        /* Past meeting styling */
         .meeting-item.past {
-            background: #f0f0f0;
-            border-color: #d8d8d8;
+            opacity: 0.7;
         }
 
         .meeting-item.past .meeting-title {
-            color: #6e6e73;
+            color: #788497;
         }
 
         .meeting-item.past .meeting-time {
-            color: #8e8e93;
+            color: #999;
         }
 
         .meeting-item.past .meeting-participants {
-            color: #aeaeb2;
+            color: #aaa;
         }
 
         .meeting-item.past .date-badge {
-            background: #8e8e93;
-            opacity: 0.8;
+            background: #999;
+        }
+
+        /* Smooth Transitions */
+        .container {
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Focus Styles */
+        .new-note-btn:focus,
+        .excel-upload-btn:focus,
+        .show-more-btn:focus {
+            outline: 2px solid #8b5cf6;
+            outline-offset: 2px;
         }
     </style>
 </head>
 <body>
-    <div class="app-container">
-        <div class="header">
-            <div></div>
+    <div class="container">
+        <header class="header">
+            <div class="header-spacer"></div>
             <button class="new-note-btn" id="new-note-btn">
-                <span>📝</span>
-                Take Notes
+                📝 Take Notes
             </button>
-        </div>
+        </header>
 
-        <div class="content">
-            <div class="section-header">
-                <h1 class="section-title">Coming up</h1>
-                <div class="header-buttons">
-                    <button class="excel-upload-btn" id="excel-upload-btn" title="Upload Excel file">
-                        📊
-                    </button>
-                    <button class="show-more-btn" id="show-more-btn">
-                        Show more ▼
-                    </button>
+        <div class="content-wrapper">
+            <div class="content">
+                <div class="section-header">
+                    <h1 class="section-title">Coming up</h1>
+                    <div class="header-buttons">
+                        <button class="excel-upload-btn" id="excel-upload-btn" title="Upload Excel file">
+                            📊
+                        </button>
+                        <button class="show-more-btn" id="show-more-btn">
+                            Show more ▼
+                        </button>
+                    </div>
                 </div>
-            </div>
 
-            <div class="meetings-container" id="meetings-container">
-                <div class="loading" id="loading-indicator">Loading meetings...</div>
+                <div class="meetings-container" id="meetings-container">
+                    <div class="loading" id="loading-indicator">Loading meetings...</div>
+                </div>
             </div>
         </div>
     </div>

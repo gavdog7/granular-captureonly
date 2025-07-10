@@ -370,6 +370,8 @@ class MeetingLoader {
     return participants
       .map(p => p.trim())
       .filter(p => p.length > 0)
+      .filter(p => p.toLowerCase() !== 'none') // Remove None entries
+      .filter(p => p.toLowerCase() !== 'tbd') // Remove TBD entries
       .map(p => this.extractEmail(p));
   }
 

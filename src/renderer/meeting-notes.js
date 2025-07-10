@@ -222,7 +222,7 @@ async function loadMeetingData() {
         try {
             participants = meeting.participants ? JSON.parse(meeting.participants) : [];
         } catch (e) {
-            console.warn('Failed to parse participants, using empty array');
+            console.warn('Failed to parse participants, using empty array', e);
             participants = [];
         }
         renderParticipants(participants);

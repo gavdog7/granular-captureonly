@@ -8,6 +8,7 @@ class MeetingApp {
         this.selectedMeeting = null;
         this.isLoading = false;
         this.showingAll = false;
+        this.showingAllPastEvents = false;
         this.init();
     }
 
@@ -55,10 +56,9 @@ class MeetingApp {
                 this.meetings = await ipcRenderer.invoke('get-todays-meetings');
             }
             this.showingAll = false;
+            this.showingAllPastEvents = false;
             
-            // Reset show more button
-            const showMoreBtn = document.getElementById('show-more-btn');
-            showMoreBtn.textContent = 'Show more ▼';
+            // Reset show more button will be handled by updateShowMoreButton()
             
             this.renderMeetings();
             this.updateStatus(`Loaded ${this.meetings.length} meetings for today`);
@@ -106,20 +106,50 @@ class MeetingApp {
             if (this.showingAll) {
                 // Switch back to filtered meetings
                 this.showingAll = false;
+                this.showingAllPastEvents = false;
                 this.meetings = await ipcRenderer.invoke('get-todays-meetings');
-                showMoreBtn.textContent = 'Show more ▼';
                 console.log(`Showing filtered meetings: ${this.meetings.length}`);
+            } else if (this.showingAllPastEvents) {
+                // Currently showing all past events, toggle back to limited past events
+                this.showingAllPastEvents = false;
+                console.log('Limiting past events to 2 most recent');
             } else {
-                // Show all meetings including filtered ones
-                this.showingAll = true;
-                this.allMeetings = await ipcRenderer.invoke('get-all-todays-meetings');
-                this.meetings = this.allMeetings;
-                showMoreBtn.textContent = 'Show less ▲';
-                console.log(`Showing all meetings: ${this.meetings.length}`);
+                // Show all past events (but keep content filtering if active)
+                this.showingAllPastEvents = true;
+                console.log('Showing all past events');
+                
+                // If we're in filtered mode, we might need to get all meetings to show all past events
+                if (!this.showingAll) {
+                    // Check if there are more past events in the full dataset
+                    const allMeetings = await ipcRenderer.invoke('get-all-todays-meetings');
+                    
+                    // Count past events in current filtered vs all meetings
+                    const currentPastCount = this.meetings.filter(meeting => {
+                        const startTime = new Date(meeting.start_time);
+                        const endTime = new Date(meeting.end_time);
+                        const status = this.getMeetingStatus(startTime, endTime);
+                        return status.class === 'past';
+                    }).length;
+                    
+                    const allPastCount = allMeetings.filter(meeting => {
+                        const startTime = new Date(meeting.start_time);
+                        const endTime = new Date(meeting.end_time);
+                        const status = this.getMeetingStatus(startTime, endTime);
+                        return status.class === 'past';
+                    }).length;
+                    
+                    // If there are more past events in the full dataset, show all meetings
+                    if (allPastCount > currentPastCount) {
+                        this.showingAll = true;
+                        this.meetings = allMeetings;
+                        console.log('Switched to all meetings to show all past events');
+                    }
+                }
             }
             
             this.renderMeetings();
-            this.updateStatus(`Showing ${this.meetings.length} meetings for today`);
+            const displayedCount = this.filterMeetingsForDisplay(this.meetings).length;
+            this.updateStatus(`Showing ${displayedCount} meetings for today`);
         } catch (error) {
             console.error('Error in toggleShowMore:', error);
             this.showError('Failed to toggle meetings view: ' + error.message);
@@ -323,19 +353,24 @@ class MeetingApp {
         
         if (this.meetings.length === 0) {
             container.innerHTML = this.renderNoMeetings();
+            this.updateShowMoreButton();
             return;
         }
 
         const meetingsCard = document.createElement('div');
         meetingsCard.className = 'meetings-card';
         
-        this.meetings.forEach(meeting => {
+        // Filter meetings to limit past events if not showing all
+        const meetingsToShow = this.filterMeetingsForDisplay(this.meetings);
+        
+        meetingsToShow.forEach(meeting => {
             const meetingElement = this.createMeetingElement(meeting);
             meetingsCard.appendChild(meetingElement);
         });
 
         container.innerHTML = '';
         container.appendChild(meetingsCard);
+        this.updateShowMoreButton();
     }
 
     renderNoMeetings() {
@@ -516,6 +551,70 @@ class MeetingApp {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    filterMeetingsForDisplay(meetings) {
+        if (this.showingAllPastEvents) {
+            return meetings;
+        }
+
+        // Sort meetings by start time (most recent first)
+        const sortedMeetings = [...meetings].sort((a, b) => {
+            return new Date(b.start_time) - new Date(a.start_time);
+        });
+
+        // Separate past and non-past meetings
+        const pastMeetings = [];
+        const nonPastMeetings = [];
+        
+        sortedMeetings.forEach(meeting => {
+            const startTime = new Date(meeting.start_time);
+            const endTime = new Date(meeting.end_time);
+            const status = this.getMeetingStatus(startTime, endTime);
+            
+            if (status.class === 'past') {
+                pastMeetings.push(meeting);
+            } else {
+                nonPastMeetings.push(meeting);
+            }
+        });
+
+        // Take only the 2 most recent past meetings
+        const limitedPastMeetings = pastMeetings.slice(0, 2);
+        
+        // Combine and re-sort by original time order
+        const combinedMeetings = [...limitedPastMeetings, ...nonPastMeetings];
+        return combinedMeetings.sort((a, b) => {
+            return new Date(a.start_time) - new Date(b.start_time);
+        });
+    }
+
+    updateShowMoreButton() {
+        const showMoreBtn = document.getElementById('show-more-btn');
+        if (!showMoreBtn) return;
+        
+        // Count total past meetings
+        const pastMeetingsCount = this.meetings.filter(meeting => {
+            const startTime = new Date(meeting.start_time);
+            const endTime = new Date(meeting.end_time);
+            const status = this.getMeetingStatus(startTime, endTime);
+            return status.class === 'past';
+        }).length;
+        
+        // Hide button if there are 2 or fewer past meetings
+        if (pastMeetingsCount <= 2) {
+            showMoreBtn.style.display = 'none';
+            return;
+        }
+        
+        showMoreBtn.style.display = 'block';
+        
+        if (this.showingAllPastEvents) {
+            showMoreBtn.textContent = 'Show less ▲';
+        } else {
+            const hiddenCount = pastMeetingsCount - 2;
+            showMoreBtn.textContent = `Show ${hiddenCount} more past event${hiddenCount > 1 ? 's' : ''} ▼`;
+        }
     }
 
     handleUploadStatusChange(data) {

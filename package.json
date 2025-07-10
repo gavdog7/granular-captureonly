@@ -39,7 +39,7 @@
     "opus-recorder": "^8.0.5",
     "quill": "^2.0.3",
     "sqlite3": "^5.1.6",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "build": {
     "appId": "com.gavinedgley.granular-captureonly",

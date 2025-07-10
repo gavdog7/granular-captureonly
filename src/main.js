@@ -513,6 +513,39 @@ ipcMain.handle('get-meetings-with-upload-status', async () => {
   }
 });
 
+// Google Drive OAuth IPC handlers
+ipcMain.handle('get-google-oauth-url', async () => {
+  try {
+    await googleDriveService.initializeOAuth();
+    const authUrl = googleDriveService.generateAuthUrl();
+    return { success: true, authUrl };
+  } catch (error) {
+    console.error('Error generating Google OAuth URL:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('exchange-google-oauth-code', async (event, code) => {
+  try {
+    await googleDriveService.exchangeCodeForTokens(code);
+    return { success: true };
+  } catch (error) {
+    console.error('Error exchanging Google OAuth code:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('check-google-auth-status', async () => {
+  try {
+    await googleDriveService.initializeOAuth();
+    const isAuthenticated = googleDriveService.isAuthenticated();
+    return { success: true, isAuthenticated };
+  } catch (error) {
+    console.error('Error checking Google auth status:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Audio recording IPC handlers
 ipcMain.handle('start-recording', async (event, meetingId) => {
   try {

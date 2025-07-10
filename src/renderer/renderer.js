@@ -14,6 +14,7 @@ class MeetingApp {
     init() {
         this.setupEventListeners();
         this.loadMeetings();
+        this.checkGoogleAuthStatus();
         
         setInterval(() => this.updateMeetingStatuses(), 30000);
     }
@@ -27,6 +28,9 @@ class MeetingApp {
 
         const excelUploadBtn = document.getElementById('excel-upload-btn');
         excelUploadBtn.addEventListener('click', () => this.uploadExcelFile());
+
+        const googleAuthBtn = document.getElementById('google-auth-btn');
+        googleAuthBtn.addEventListener('click', () => this.handleGoogleAuth());
 
         ipcRenderer.on('meetings-refreshed', () => {
             this.loadMeetings();
@@ -172,6 +176,146 @@ class MeetingApp {
             console.error('Error processing Excel file:', error);
             this.showError('Failed to process Excel file: ' + error.message);
         }
+    }
+
+    async handleGoogleAuth() {
+        try {
+            // Check current auth status
+            const statusResult = await ipcRenderer.invoke('check-google-auth-status');
+            
+            if (statusResult.success && statusResult.isAuthenticated) {
+                this.showSuccess('Google Drive is already connected!');
+                this.updateGoogleAuthButton(true);
+                return;
+            }
+
+            // Get OAuth URL
+            const urlResult = await ipcRenderer.invoke('get-google-oauth-url');
+            
+            if (!urlResult.success) {
+                this.showError('Failed to initialize Google Drive: ' + urlResult.error);
+                return;
+            }
+
+            // Open OAuth URL in default browser
+            require('electron').shell.openExternal(urlResult.authUrl);
+            
+            // Show modal for code input
+            this.showOAuthModal();
+            
+        } catch (error) {
+            console.error('Error handling Google auth:', error);
+            this.showError('Failed to connect Google Drive: ' + error.message);
+        }
+    }
+
+    updateGoogleAuthButton(isAuthenticated) {
+        const btn = document.getElementById('google-auth-btn');
+        if (isAuthenticated) {
+            btn.textContent = '✓ Drive';
+            btn.classList.add('authenticated');
+            btn.title = 'Google Drive connected';
+        } else {
+            btn.textContent = 'Drive';
+            btn.classList.remove('authenticated');
+            btn.title = 'Connect Google Drive';
+        }
+    }
+
+    async resetFailedUploads() {
+        try {
+            const meetings = await ipcRenderer.invoke('get-meetings-with-upload-status');
+            if (meetings.success) {
+                // Find failed meetings and reset them to pending
+                for (const meeting of meetings.meetings) {
+                    if (meeting.upload_status === 'failed') {
+                        // This will trigger a re-upload attempt
+                        await ipcRenderer.invoke('queue-meeting-upload', meeting.id);
+                    }
+                }
+                this.loadMeetings(); // Refresh the UI
+            }
+        } catch (error) {
+            console.error('Error resetting failed uploads:', error);
+        }
+    }
+
+    async checkGoogleAuthStatus() {
+        try {
+            const result = await ipcRenderer.invoke('check-google-auth-status');
+            if (result.success) {
+                this.updateGoogleAuthButton(result.isAuthenticated);
+            }
+        } catch (error) {
+            console.error('Error checking Google auth status:', error);
+        }
+    }
+
+    showOAuthModal() {
+        const modal = document.getElementById('oauth-modal');
+        const input = document.getElementById('oauth-code-input');
+        const submitBtn = document.getElementById('oauth-submit-btn');
+        const cancelBtn = document.getElementById('oauth-cancel-btn');
+
+        modal.style.display = 'flex';
+        input.value = '';
+        input.focus();
+
+        // Handle submit
+        const handleSubmit = async () => {
+            const code = input.value.trim();
+            if (!code) {
+                this.showError('Please enter the authorization code');
+                return;
+            }
+
+            try {
+                const exchangeResult = await ipcRenderer.invoke('exchange-google-oauth-code', code);
+                
+                if (exchangeResult.success) {
+                    this.showSuccess('Google Drive connected successfully!');
+                    this.updateGoogleAuthButton(true);
+                    await this.resetFailedUploads();
+                    this.hideOAuthModal();
+                } else {
+                    this.showError('Failed to connect Google Drive: ' + exchangeResult.error);
+                }
+            } catch (error) {
+                this.showError('Failed to connect Google Drive: ' + error.message);
+            }
+        };
+
+        // Handle cancel
+        const handleCancel = () => {
+            this.hideOAuthModal();
+            this.showError('Authorization cancelled');
+        };
+
+        // Event listeners
+        submitBtn.onclick = handleSubmit;
+        cancelBtn.onclick = handleCancel;
+        
+        // Enter key to submit
+        input.onkeypress = (e) => {
+            if (e.key === 'Enter') {
+                handleSubmit();
+            }
+        };
+
+        // Escape key to cancel
+        document.onkeydown = (e) => {
+            if (e.key === 'Escape' && modal.style.display === 'flex') {
+                handleCancel();
+            }
+        };
+    }
+
+    hideOAuthModal() {
+        const modal = document.getElementById('oauth-modal');
+        modal.style.display = 'none';
+        
+        // Clean up event listeners
+        document.onkeydown = null;
     }
 
     renderMeetings() {

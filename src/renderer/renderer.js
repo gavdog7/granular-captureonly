@@ -31,12 +31,25 @@ class MeetingApp {
         ipcRenderer.on('meetings-refreshed', () => {
             this.loadMeetings();
         });
+
+        // Listen for upload status changes
+        ipcRenderer.on('upload-status-changed', (event, data) => {
+            this.handleUploadStatusChange(data);
+        });
     }
 
     async loadMeetings() {
         this.setLoading(true);
         try {
-            this.meetings = await ipcRenderer.invoke('get-todays-meetings');
+            // Load meetings with upload status
+            const result = await ipcRenderer.invoke('get-meetings-with-upload-status');
+            if (result.success) {
+                this.meetings = result.meetings;
+            } else {
+                // Fallback to regular meetings if upload status fails
+                console.warn('Failed to get upload status, using regular meetings:', result.error);
+                this.meetings = await ipcRenderer.invoke('get-todays-meetings');
+            }
             this.showingAll = false;
             
             // Reset show more button
@@ -205,6 +218,11 @@ class MeetingApp {
             meetingDiv.classList.add('past');
         }
 
+        // Add upload status classes for visual feedback
+        const uploadStatus = meeting.upload_status || 'pending';
+        meetingDiv.classList.add(`upload-${uploadStatus}`);
+        console.log(`Meeting ${meeting.id} (${meeting.title}) has upload status: ${uploadStatus}`);
+
         // Format date for badge
         const dateStr = startTime.toLocaleDateString('en-US', { 
             month: 'short', 
@@ -354,6 +372,32 @@ class MeetingApp {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    handleUploadStatusChange(data) {
+        const { meetingId, status, timestamp } = data;
+        console.log(`📡 Upload status change: meeting ${meetingId} -> ${status} at ${timestamp}`);
+        
+        // Find the meeting element and update its CSS class
+        const meetingElement = document.querySelector(`[data-meeting-id="${meetingId}"]`);
+        if (meetingElement) {
+            // Remove existing upload status classes
+            meetingElement.classList.remove('upload-pending', 'upload-uploading', 'upload-completed', 'upload-failed');
+            
+            // Add new upload status class
+            meetingElement.classList.add(`upload-${status}`);
+            
+            console.log(`✅ Updated meeting ${meetingId} visual status to: ${status}`);
+            
+            // Show success message for completed uploads
+            if (status === 'completed') {
+                const meeting = this.meetings.find(m => m.id == meetingId);
+                const meetingTitle = meeting ? meeting.title : `Meeting ${meetingId}`;
+                this.showSuccess(`"${meetingTitle}" uploaded to Google Drive successfully!`);
+            }
+        } else {
+            console.warn(`⚠️ Could not find meeting element for ID: ${meetingId}`);
+        }
     }
 
 }

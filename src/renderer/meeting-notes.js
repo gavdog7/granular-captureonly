@@ -881,6 +881,24 @@ async function handleNavigationBack() {
             console.log('✅ Meeting notes exported to markdown:', exportResult.filename);
             console.log('📂 File path:', exportResult.filePath);
             ipcRenderer.invoke('log-to-main', `✅ MARKDOWN EXPORT: Success! File: ${exportResult.filename}`);
+            
+            // Queue upload to Google Drive (markdown + audio files)
+            console.log('📤 Queueing meeting upload to Google Drive...');
+            ipcRenderer.invoke('log-to-main', `📤 UPLOAD: Queueing upload for meeting ${currentMeetingId}`);
+            try {
+                const uploadResult = await ipcRenderer.invoke('queue-meeting-upload', currentMeetingId);
+                if (uploadResult.success) {
+                    console.log('✅ Meeting upload queued successfully');
+                    ipcRenderer.invoke('log-to-main', `✅ UPLOAD: Meeting ${currentMeetingId} queued for upload`);
+                } else {
+                    console.error('❌ Failed to queue meeting upload:', uploadResult.error);
+                    ipcRenderer.invoke('log-to-main', `❌ UPLOAD: Failed to queue - ${uploadResult.error}`);
+                }
+            } catch (uploadError) {
+                console.error('❌ Error queueing upload:', uploadError);
+                ipcRenderer.invoke('log-to-main', `❌ UPLOAD: Error - ${uploadError.message}`);
+            }
+            
         } else {
             console.error('❌ Failed to export meeting notes:', exportResult.error);
             ipcRenderer.invoke('log-to-main', `❌ MARKDOWN EXPORT: Failed - ${exportResult.error}`);

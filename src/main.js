@@ -4,6 +4,8 @@ const fs = require('fs-extra');
 const Database = require('./database');
 const MeetingLoader = require('./meeting-loader');
 const AudioRecorder = require('./audio-recorder');
+const UploadService = require('./upload-service');
+const GoogleDriveService = require('./google-drive');
 const Store = require('electron-store');
 const { setupTestDate, disableTestDate, dateOverride } = require('./date-override');
 
@@ -11,6 +13,8 @@ let mainWindow;
 let database;
 let meetingLoader;
 let audioRecorder;
+let uploadService;
+let googleDriveService;
 let store;
 
 function createWindow() {
@@ -198,6 +202,19 @@ async function initializeApp() {
 
     meetingLoader = new MeetingLoader(database, store);
     audioRecorder = new AudioRecorder(database);
+    
+    // Initialize Google Drive service and Upload service
+    googleDriveService = new GoogleDriveService(store);
+    try {
+      await googleDriveService.initializeOAuth();
+      console.log('Google Drive service initialized');
+    } catch (error) {
+      console.warn('Google Drive service initialization failed (will retry on first upload):', error.message);
+    }
+    
+    uploadService = new UploadService(database, googleDriveService, mainWindow);
+    await uploadService.initialize();
+    console.log('Upload service initialized');
     
     // Always load today's meetings from the calendar management log
     await meetingLoader.loadTodaysMeetings();
@@ -450,6 +467,47 @@ ipcMain.handle('remove-attachment', async (event, meetingId, filename) => {
   } catch (error) {
     console.error('Error removing attachment:', error);
     throw error;
+  }
+});
+
+// Upload service IPC handlers
+ipcMain.handle('queue-meeting-upload', async (event, meetingId) => {
+  try {
+    await uploadService.queueMeetingUpload(meetingId);
+    return { success: true };
+  } catch (error) {
+    console.error('Error queueing meeting upload:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-upload-status', async (event, meetingId) => {
+  try {
+    const status = await database.getMeetingUploadStatus(meetingId);
+    return { success: true, ...status };
+  } catch (error) {
+    console.error('Error getting upload status:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-upload-queue-status', async () => {
+  try {
+    const status = uploadService.getQueueStatus();
+    return { success: true, ...status };
+  } catch (error) {
+    console.error('Error getting upload queue status:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-meetings-with-upload-status', async () => {
+  try {
+    const meetings = await database.getAllMeetingsWithUploadStatus();
+    return { success: true, meetings };
+  } catch (error) {
+    console.error('Error getting meetings with upload status:', error);
+    return { success: false, error: error.message };
   }
 });
 

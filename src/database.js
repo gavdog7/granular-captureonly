@@ -78,16 +78,58 @@ class Database {
     `;
 
     return new Promise((resolve, reject) => {
-      this.db.exec(createTablesSQL, (err) => {
+      this.db.exec(createTablesSQL, async (err) => {
         if (err) {
           console.error('Error creating tables:', err);
           reject(err);
         } else {
           console.log('Database tables created successfully');
-          resolve();
+          
+          // Run migrations for new columns
+          try {
+            await this.runMigrations();
+            console.log('Database migrations completed successfully');
+            resolve();
+          } catch (migrationError) {
+            console.error('Error running migrations:', migrationError);
+            reject(migrationError);
+          }
         }
       });
     });
+  }
+
+  async runMigrations() {
+    try {
+      // Check if upload_status column exists
+      const columnExists = await this.checkColumnExists('meetings', 'upload_status');
+      if (!columnExists) {
+        console.log('Adding upload status columns to meetings table...');
+        
+        // Add the new columns
+        await this.run('ALTER TABLE meetings ADD COLUMN upload_status TEXT DEFAULT "pending"');
+        await this.run('ALTER TABLE meetings ADD COLUMN uploaded_at TEXT');
+        await this.run('ALTER TABLE meetings ADD COLUMN gdrive_folder_id TEXT');
+        
+        console.log('Upload status columns added successfully');
+      } else {
+        console.log('Upload status columns already exist');
+      }
+    } catch (error) {
+      console.error('Migration error:', error);
+      throw error;
+    }
+  }
+
+  async checkColumnExists(tableName, columnName) {
+    try {
+      const result = await this.get(`PRAGMA table_info(${tableName})`);
+      const columns = await this.all(`PRAGMA table_info(${tableName})`);
+      return columns.some(column => column.name === columnName);
+    } catch (error) {
+      console.error('Error checking column existence:', error);
+      return false;
+    }
   }
 
   async run(sql, params = []) {
@@ -505,6 +547,84 @@ class Database {
         resolve();
       }
     });
+  }
+
+  // Upload status management methods
+  async setMeetingUploadStatus(meetingId, status, gdriveFileId = null) {
+    try {
+      const updateData = [status];
+      let sql = 'UPDATE meetings SET upload_status = ?';
+      
+      if (status === 'completed') {
+        sql += ', uploaded_at = ?, gdrive_folder_id = ?';
+        updateData.push(new Date().toISOString(), gdriveFileId);
+      }
+      
+      sql += ' WHERE id = ?';
+      updateData.push(meetingId);
+      
+      await this.run(sql, updateData);
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating meeting upload status:', error);
+      throw error;
+    }
+  }
+
+  async getMeetingUploadStatus(meetingId) {
+    try {
+      const meeting = await this.get(
+        'SELECT upload_status, uploaded_at, gdrive_folder_id FROM meetings WHERE id = ?',
+        [meetingId]
+      );
+      return meeting || { upload_status: 'pending', uploaded_at: null, gdrive_folder_id: null };
+    } catch (error) {
+      console.error('Error getting meeting upload status:', error);
+      throw error;
+    }
+  }
+
+  async getPendingUploads() {
+    try {
+      const meetings = await this.all(
+        "SELECT id, title, folder_name FROM meetings WHERE upload_status IN ('pending', 'failed')"
+      );
+      return meetings;
+    } catch (error) {
+      console.error('Error getting pending uploads:', error);
+      throw error;
+    }
+  }
+
+  async getMeetingRecordings(meetingId) {
+    try {
+      const recordings = await this.all(
+        'SELECT final_path, started_at, duration FROM recording_sessions WHERE meeting_id = ? AND completed = 1',
+        [meetingId]
+      );
+      return recordings;
+    } catch (error) {
+      console.error('Error getting meeting recordings:', error);
+      throw error;
+    }
+  }
+
+  async getAllMeetingsWithUploadStatus() {
+    try {
+      const meetings = await this.all(`
+        SELECT m.*, 
+               COUNT(rs.id) as recording_count
+        FROM meetings m
+        LEFT JOIN recording_sessions rs ON m.id = rs.meeting_id AND rs.completed = 1
+        WHERE date(m.start_time) = date(?)
+        GROUP BY m.id
+        ORDER BY m.start_time ASC
+      `, [dateOverride.today()]);
+      return meetings;
+    } catch (error) {
+      console.error('Error getting meetings with upload status:', error);
+      throw error;
+    }
   }
 }
 

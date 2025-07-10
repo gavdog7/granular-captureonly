@@ -29,12 +29,18 @@ class MeetingLoader {
   }
 
   async loadMeetingsFromExcel() {
-    // Automatically use the calendar management log.xlsx file
-    const excelFilePath = path.join(__dirname, '../docs/Calendar import xlsx/Calendar management log.xlsx');
+    // Look for calendar*.xlsx files in the assets folder
+    const projectRoot = path.dirname(__dirname);
+    const assetsDir = path.join(projectRoot, 'assets');
     
-    if (!await fs.pathExists(excelFilePath)) {
-      throw new Error(`Calendar management log.xlsx not found at: ${excelFilePath}`);
+    // Find calendar files (calendar.xlsx, calendar (1).xlsx, calendar (2).xlsx, etc.)
+    const excelFilePath = await this.findCalendarFile(assetsDir);
+    
+    if (!excelFilePath) {
+      throw new Error(`Calendar Excel file not found. Please place a file named 'calendar.xlsx' (or 'calendar (1).xlsx', etc.) in the assets folder at: ${assetsDir}`);
     }
+    
+    console.log(`📅 Using calendar file: ${excelFilePath}`);
 
     try {
       const workbook = XLSX.readFile(excelFilePath);
@@ -406,6 +412,59 @@ class MeetingLoader {
 
   getLastParsedTime() {
     return this.lastParsedTime;
+  }
+
+  async findCalendarFile(assetsDir) {
+    try {
+      // Ensure assets directory exists
+      await fs.ensureDir(assetsDir);
+      
+      // Read all files in the assets directory
+      const files = await fs.readdir(assetsDir);
+      
+      // Find files that start with 'calendar' and end with '.xlsx'
+      const calendarFiles = files.filter(file => 
+        file.toLowerCase().startsWith('calendar') && 
+        file.toLowerCase().endsWith('.xlsx')
+      );
+      
+      if (calendarFiles.length === 0) {
+        console.log(`📂 No calendar*.xlsx files found in: ${assetsDir}`);
+        console.log(`📂 Available files: ${files.join(', ')}`);
+        return null;
+      }
+      
+      // Get file stats and sort by most recent modification date
+      const filesWithStats = await Promise.all(
+        calendarFiles.map(async (file) => {
+          const filePath = path.join(assetsDir, file);
+          const stats = await fs.stat(filePath);
+          return {
+            name: file,
+            path: filePath,
+            modifiedTime: stats.mtime,
+            modifiedTimeString: stats.mtime.toLocaleString()
+          };
+        })
+      );
+      
+      // Sort by most recent modification date (newest first)
+      filesWithStats.sort((a, b) => b.modifiedTime - a.modifiedTime);
+      
+      const selectedFile = filesWithStats[0];
+      console.log(`📅 Found ${filesWithStats.length} calendar file(s):`);
+      filesWithStats.forEach((file, index) => {
+        const marker = index === 0 ? '→' : ' ';
+        console.log(`  ${marker} ${file.name} (modified: ${file.modifiedTimeString})`);
+      });
+      console.log(`📅 Using most recent: ${selectedFile.name}`);
+      
+      return selectedFile.path;
+      
+    } catch (error) {
+      console.error('Error finding calendar file:', error);
+      return null;
+    }
   }
 }
 

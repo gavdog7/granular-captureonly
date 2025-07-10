@@ -3,6 +3,145 @@ import AVFoundation
 import CoreAudio
 import os.log
 
+// MARK: - Ogg Container Support
+class OggOpusWriter {
+    private var fileHandle: FileHandle
+    private var sequenceNumber: UInt32 = 0
+    private var granulePosition: UInt64 = 0
+    private let streamSerialNumber: UInt32
+    private let logger = Logger(subsystem: "com.granular.audio-capture", category: "OggOpusWriter")
+    
+    init(fileHandle: FileHandle) {
+        self.fileHandle = fileHandle
+        self.streamSerialNumber = UInt32.random(in: 1...UInt32.max)
+    }
+    
+    func writeOpusHeadPage(channels: UInt8, inputSampleRate: UInt32, preSkip: UInt16 = 312) throws {
+        // Create OpusHead packet
+        var opusHead = Data()
+        opusHead.append("OpusHead".data(using: .ascii)!) // Magic signature
+        opusHead.append(1) // Version
+        opusHead.append(channels) // Channel count
+        opusHead.append(Data(withUnsafeBytes(of: preSkip.littleEndian) { Data($0) })) // Pre-skip (little-endian)
+        opusHead.append(Data(withUnsafeBytes(of: inputSampleRate.littleEndian) { Data($0) })) // Input sample rate
+        opusHead.append(Data([0x00, 0x00])) // Output gain (0 dB)
+        opusHead.append(0) // Channel mapping family (0 = mono/stereo)
+        
+        try writeOggPage(packets: [opusHead], isFirstPage: true, isLastPage: false, granulePos: 0)
+        logger.info("Wrote OpusHead page with \(channels) channel(s), \(inputSampleRate)Hz")
+    }
+    
+    func writeOpusTagsPage() throws {
+        // Create OpusTags packet
+        var opusTags = Data()
+        opusTags.append("OpusTags".data(using: .ascii)!) // Magic signature
+        
+        let vendor = "Granular Audio Capture v1.0.0"
+        let vendorData = vendor.data(using: .utf8)!
+        opusTags.append(Data(withUnsafeBytes(of: UInt32(vendorData.count).littleEndian) { Data($0) }))
+        opusTags.append(vendorData)
+        
+        // User comment list length (0 comments)
+        opusTags.append(Data(withUnsafeBytes(of: UInt32(0).littleEndian) { Data($0) }))
+        
+        try writeOggPage(packets: [opusTags], isFirstPage: false, isLastPage: false, granulePos: 0)
+        logger.info("Wrote OpusTags page")
+    }
+    
+    func writeAudioPage(opusPackets: [Data], samplesInPage: UInt64) throws {
+        granulePosition += samplesInPage
+        try writeOggPage(packets: opusPackets, isFirstPage: false, isLastPage: false, granulePos: granulePosition)
+    }
+    
+    func finalize() throws {
+        // Write empty page to mark end of stream
+        try writeOggPage(packets: [], isFirstPage: false, isLastPage: true, granulePos: granulePosition)
+        logger.info("Finalized Ogg stream")
+    }
+    
+    private func writeOggPage(packets: [Data], isFirstPage: Bool, isLastPage: Bool, granulePos: UInt64) throws {
+        // Calculate total packet data size
+        let totalPacketSize = packets.reduce(0) { $0 + $1.count }
+        
+        // Create segment table
+        var segmentTable = Data()
+        var lacingValues: [UInt8] = []
+        
+        for packet in packets {
+            let size = packet.count
+            let fullSegments = size / 255
+            let remainder = size % 255
+            
+            // Add 255 for each full segment
+            for _ in 0..<fullSegments {
+                lacingValues.append(255)
+            }
+            // Add remainder (or 0 if packet is exactly divisible by 255)
+            lacingValues.append(UInt8(remainder))
+        }
+        
+        if packets.isEmpty {
+            lacingValues = [0] // Empty page needs one zero-length segment
+        }
+        
+        segmentTable.append(contentsOf: lacingValues)
+        
+        // Create Ogg page header
+        var oggPage = Data()
+        oggPage.append("OggS".data(using: .ascii)!) // Capture pattern
+        oggPage.append(0) // Stream structure version
+        
+        // Header type flag
+        var headerType: UInt8 = 0
+        if isFirstPage { headerType |= 0x02 } // Beginning of stream
+        if isLastPage { headerType |= 0x04 } // End of stream
+        oggPage.append(headerType)
+        
+        oggPage.append(Data(withUnsafeBytes(of: granulePos.littleEndian) { Data($0) })) // Granule position
+        oggPage.append(Data(withUnsafeBytes(of: streamSerialNumber.littleEndian) { Data($0) })) // Stream serial number
+        oggPage.append(Data(withUnsafeBytes(of: sequenceNumber.littleEndian) { Data($0) })) // Page sequence number
+        
+        // CRC32 placeholder (will be calculated after header is complete)
+        let crcPosition = oggPage.count
+        oggPage.append(Data([0x00, 0x00, 0x00, 0x00]))
+        
+        oggPage.append(UInt8(lacingValues.count)) // Number of segments
+        oggPage.append(segmentTable) // Segment table
+        
+        // Add packet data
+        for packet in packets {
+            oggPage.append(packet)
+        }
+        
+        // Calculate and insert CRC32
+        let crc = calculateCRC32(data: oggPage)
+        oggPage.replaceSubrange(crcPosition..<(crcPosition + 4), with: Data(withUnsafeBytes(of: crc.littleEndian) { Data($0) }))
+        
+        // Write to file
+        try fileHandle.write(contentsOf: oggPage)
+        sequenceNumber += 1
+    }
+    
+    private func calculateCRC32(data: Data) -> UInt32 {
+        // Simple CRC32 implementation for Ogg
+        let polynomial: UInt32 = 0x04C11DB7
+        var crc: UInt32 = 0
+        
+        for byte in data {
+            crc ^= UInt32(byte) << 24
+            for _ in 0..<8 {
+                if (crc & 0x80000000) != 0 {
+                    crc = (crc << 1) ^ polynomial
+                } else {
+                    crc <<= 1
+                }
+            }
+        }
+        
+        return crc
+    }
+}
+
 // MARK: - Opus Encoder Interface
 class OpusEncoder {
     private let sampleRate: Int32 = 48000
@@ -84,9 +223,12 @@ class AudioRecordingManager {
     private var audioEngine: AVAudioEngine?
     private var opusEncoder: OpusEncoder?
     private var outputFileHandle: FileHandle?
+    private var oggWriter: OggOpusWriter?
     private var isPaused = false
     private var frameBuffer: [Float] = []
     private let frameSize: Int = 960 // 20ms at 48kHz
+    private var audioPacketsBuffer: [Data] = []
+    private let packetsPerPage = 50 // Group packets into pages
     private let logger = Logger(subsystem: "com.granular.audio-capture", category: "AudioRecording")
     
     func startRecording(outputPath: String, bitrate: Int = 32000) throws {
@@ -103,8 +245,12 @@ class AudioRecordingManager {
         FileManager.default.createFile(atPath: outputPath, contents: nil, attributes: nil)
         outputFileHandle = try FileHandle(forWritingTo: outputURL)
         
-        // Write Opus file header (simple format)
-        try writeOpusHeader()
+        // Initialize Ogg Opus writer
+        oggWriter = OggOpusWriter(fileHandle: outputFileHandle!)
+        
+        // Write Ogg Opus headers
+        try oggWriter!.writeOpusHeadPage(channels: 1, inputSampleRate: 48000)
+        try oggWriter!.writeOpusTagsPage()
         
         // Create audio engine
         audioEngine = AVAudioEngine()
@@ -152,10 +298,17 @@ class AudioRecordingManager {
     }
     
     func stopRecording() {
-        logger.info("Stopping Opus recording")
+        logger.info("Stopping Ogg Opus recording")
         
         // Flush any remaining audio data
         flushRemainingFrames()
+        
+        // Finalize Ogg stream
+        do {
+            try oggWriter?.finalize()
+        } catch {
+            logger.error("Error finalizing Ogg stream: \(error.localizedDescription)")
+        }
         
         // Clean up
         audioEngine?.stop()
@@ -165,21 +318,11 @@ class AudioRecordingManager {
         audioEngine = nil
         opusEncoder = nil
         outputFileHandle = nil
+        oggWriter = nil
         
-        logger.info("Opus recording stopped successfully")
+        logger.info("Ogg Opus recording stopped successfully")
     }
     
-    private func writeOpusHeader() throws {
-        // Simple Opus file format (OggOpus would be more complex)
-        // For now, write a simple header with magic bytes and format info
-        let header = "OPUS".data(using: .ascii)! + 
-                    Data([0x01, 0x00]) + // Version
-                    Data([0x01]) + // Channel count
-                    Data([0x80, 0xBB, 0x00, 0x00]) + // Sample rate (48000)
-                    Data([0x00, 0x7D, 0x00, 0x00]) // Bitrate (32000)
-        
-        try outputFileHandle?.write(contentsOf: header)
-    }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) throws {
         guard let channelData = buffer.floatChannelData?[0] else { return }
@@ -199,7 +342,7 @@ class AudioRecordingManager {
     private func encodeFrame() throws {
         guard frameBuffer.count >= frameSize,
               let encoder = opusEncoder,
-              let fileHandle = outputFileHandle else { return }
+              let oggWriter = oggWriter else { return }
         
         // Extract frame
         let frame = Array(frameBuffer.prefix(frameSize))
@@ -210,22 +353,36 @@ class AudioRecordingManager {
             return try encoder.encode(pcmData: buffer.baseAddress!, frameSize: Int32(self.frameSize))
         }
         
-        // Write frame size + encoded data
-        var frameSizeBytes = UInt32(encodedData.count)
-        let frameSizeData = Data(bytes: &frameSizeBytes, count: 4)
+        // Add to packet buffer
+        audioPacketsBuffer.append(encodedData)
         
-        try fileHandle.write(contentsOf: frameSizeData)
-        try fileHandle.write(contentsOf: encodedData)
+        // Write page when buffer is full
+        if audioPacketsBuffer.count >= packetsPerPage {
+            let samplesInPage = UInt64(audioPacketsBuffer.count * frameSize)
+            try oggWriter.writeAudioPage(opusPackets: audioPacketsBuffer, samplesInPage: samplesInPage)
+            audioPacketsBuffer.removeAll()
+        }
     }
     
     private func flushRemainingFrames() {
-        // Pad remaining samples with zeros if needed
+        // Encode remaining complete frames
         while frameBuffer.count >= frameSize {
             do {
                 try encodeFrame()
             } catch {
                 print("Error flushing remaining frames: \(error)")
                 break
+            }
+        }
+        
+        // Write any remaining packets in buffer
+        if !audioPacketsBuffer.isEmpty {
+            do {
+                let samplesInPage = UInt64(audioPacketsBuffer.count * frameSize)
+                try oggWriter?.writeAudioPage(opusPackets: audioPacketsBuffer, samplesInPage: samplesInPage)
+                audioPacketsBuffer.removeAll()
+            } catch {
+                print("Error writing final audio page: \(error)")
             }
         }
     }
@@ -408,12 +565,12 @@ func parseAction(_ actionString: String) -> AudioCaptureCommand.Action? {
 
 func printUsage() {
     print("""
-    Granular Audio Capture v1.0.0 - Opus Edition
+    Granular Audio Capture v1.0.0 - Ogg Opus Edition
     
     Usage: audio-capture <action> [options]
     
     Actions:
-        start       Start Opus-encoded microphone recording
+        start       Start Ogg Opus-encoded microphone recording
         pause       Pause active recording
         resume      Resume paused recording
         stop        Stop active recording
@@ -430,7 +587,7 @@ func printUsage() {
         audio-capture resume --session-id 123
         audio-capture stop --session-id 123
     
-    Output: Opus-encoded audio files (~240KB per minute at 32kbps)
+    Output: Standard Ogg Opus files playable by VLC and other media players
     """)
 }
 
@@ -456,8 +613,9 @@ func main() {
             
             try recordingManager.startRecording(outputPath: outputPath, bitrate: command.bitrate)
             
-            print("Opus recording started. Send SIGUSR1 to pause, SIGUSR2 to resume, SIGTERM to stop.")
+            print("Ogg Opus recording started. Send SIGUSR1 to pause, SIGUSR2 to resume, SIGTERM to stop.")
             print("Process ID: \(ProcessInfo.processInfo.processIdentifier)")
+            print("Output format: Standard Ogg Opus (.opus)")
             print("Target file size: ~240KB per minute at 32kbps")
             
             RunLoop.main.run()
@@ -472,9 +630,10 @@ func main() {
             print("Use kill -TERM <process_id> to stop recording")
             
         case .version:
-            print("Granular Audio Capture v1.0.0 - Opus Edition")
-            print("Opus-encoded microphone recording utility")
+            print("Granular Audio Capture v1.0.0 - Ogg Opus Edition")
+            print("Standard Ogg Opus microphone recording utility")
             print("Target: 32kbps, ~240KB per minute")
+            print("Output: Playable .opus files compatible with VLC and other players")
         }
     } catch {
         print("Error: \(error.localizedDescription)")

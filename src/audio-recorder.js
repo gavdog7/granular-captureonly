@@ -37,20 +37,18 @@ class AudioRecorder {
       
       // Generate unique filename with Opus extension
       const filename = this.generateFilename(meetingId);
-      const tempPath = path.join(recordingDir, `${filename}.tmp`);
       const finalPath = path.join(recordingDir, `${filename}.opus`);
 
       // Create recording session in database
-      const sessionId = await this.database.startRecordingSession(meetingId, tempPath);
+      const sessionId = await this.database.startRecordingSession(meetingId, finalPath);
 
       // Start native audio capture process
-      const captureProcess = await this.startCaptureProcess(tempPath);
+      const captureProcess = await this.startCaptureProcess(finalPath);
 
       // Create recording session object
       const recordingSession = {
         sessionId,
         meetingId,
-        tempPath,
         finalPath,
         filename,
         isRecording: true,
@@ -157,10 +155,7 @@ class AudioRecorder {
         clearInterval(recording.durationTimer);
       }
 
-      // Move temp file to final location
-      await this.finalizeRecording(recording);
-
-      // Update database
+      // Update database (file is already in final location)
       await this.database.endRecordingSession(
         recording.sessionId,
         recording.finalPath,
@@ -382,29 +377,6 @@ class AudioRecorder {
     }, 1000);
   }
 
-  /**
-   * Finalize recording by moving temp file to final location
-   * @param {Object} recordingSession - Recording session object
-   */
-  async finalizeRecording(recordingSession) {
-    try {
-      // Check if temp file exists
-      const tempExists = await fs.access(recordingSession.tempPath)
-        .then(() => true)
-        .catch(() => false);
-
-      if (tempExists) {
-        // Move temp file to final location
-        await fs.rename(recordingSession.tempPath, recordingSession.finalPath);
-        console.log(`Moved recording from ${recordingSession.tempPath} to ${recordingSession.finalPath}`);
-      } else {
-        console.warn(`Temp file not found: ${recordingSession.tempPath}`);
-      }
-    } catch (error) {
-      console.error('Error finalizing recording:', error);
-      throw error;
-    }
-  }
 
   /**
    * Clean up all active recordings (for app shutdown)

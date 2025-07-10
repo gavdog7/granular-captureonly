@@ -305,6 +305,20 @@ class Database {
     );
   }
 
+  async updateMeetingFolderName(meetingId, folderName) {
+    return this.run(
+      'UPDATE meetings SET folder_name = ?, updated_at = ? WHERE id = ?',
+      [folderName, new Date().toISOString(), meetingId]
+    );
+  }
+
+  async getMeetingFolderInfo(meetingId) {
+    return this.get(
+      'SELECT folder_name, start_time FROM meetings WHERE id = ?',
+      [meetingId]
+    );
+  }
+
   async getMeetingAttachments(meetingId) {
     return this.all(
       'SELECT * FROM attachments WHERE meeting_id = ?',

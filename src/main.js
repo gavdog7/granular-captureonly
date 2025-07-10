@@ -341,8 +341,42 @@ ipcMain.handle('update-meeting-participants', async (event, meetingId, participa
 
 ipcMain.handle('update-meeting-title', async (event, meetingId, title) => {
   try {
+    // Get current folder info before updating title
+    const folderInfo = await database.getMeetingFolderInfo(meetingId);
+    if (!folderInfo) {
+      throw new Error('Meeting not found');
+    }
+
+    // Update the title first
     await database.updateMeetingTitle(meetingId, title);
-    return { success: true };
+
+    // Attempt to rename folder and files
+    const meetingDate = folderInfo.start_time.split('T')[0]; // Extract YYYY-MM-DD
+    const { renameNoteFolderAndFiles, rollbackRename } = require('./utils/file-manager');
+    
+    const renameResult = await renameNoteFolderAndFiles(
+      meetingDate, 
+      folderInfo.folder_name, 
+      title
+    );
+
+    if (renameResult.success) {
+      // Update database with new folder name
+      await database.updateMeetingFolderName(meetingId, renameResult.newFolderName);
+      return { 
+        success: true, 
+        folderRenamed: true,
+        newFolderName: renameResult.newFolderName 
+      };
+    } else {
+      // Folder rename failed, but title update succeeded
+      console.warn('Folder rename failed:', renameResult.error);
+      return { 
+        success: true, 
+        folderRenamed: false,
+        error: renameResult.error 
+      };
+    }
   } catch (error) {
     console.error('Error updating meeting title:', error);
     throw error;

@@ -768,9 +768,19 @@ async function saveTitle() {
     if (newTitle && newTitle !== titleElement.textContent) {
         try {
             setSaveStatus('saving');
-            await ipcRenderer.invoke('update-meeting-title', currentMeetingId, newTitle);
+            const result = await ipcRenderer.invoke('update-meeting-title', currentMeetingId, newTitle);
             titleElement.textContent = newTitle;
-            setSaveStatus('saved');
+            
+            if (result.folderRenamed) {
+                setSaveStatus('saved');
+                console.log('Title and folder updated successfully. New folder:', result.newFolderName);
+            } else if (result.error) {
+                setSaveStatus('saved');
+                console.warn('Title updated but folder rename failed:', result.error);
+                // Could show a subtle warning to user if desired
+            } else {
+                setSaveStatus('saved');
+            }
         } catch (error) {
             console.error('Error updating meeting title:', error);
             setSaveStatus('error');

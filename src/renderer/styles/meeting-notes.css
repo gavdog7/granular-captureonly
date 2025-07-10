@@ -179,13 +179,17 @@ body {
 .participants-pill {
     background: transparent;
     color: #666;
-    padding: 4px 12px;
+    padding: 6px 12px;
     border: 1px solid #ccc;
     border-radius: 6px;
     font-size: 13px;
     font-weight: normal;
     position: relative;
     transition: all 0.2s ease;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
 }
 
 .participants-pill:hover {
@@ -278,6 +282,7 @@ body {
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+    box-sizing: border-box;
 }
 
 .add-participant-btn:hover {

@@ -15,7 +15,7 @@
             margin: 0;
             padding: 0;
             background: transparent;
-            overflow: hidden;
+            overflow: auto;
         }
 
         .container {
@@ -29,7 +29,7 @@
             display: flex;
             flex-direction: column;
             border-radius: 10px;
-            overflow: hidden;
+            overflow: auto;
             box-shadow: 0 0 0 1px #f5f5f5;
         }
 
@@ -50,26 +50,24 @@
         }
 
         .new-note-btn {
-            background: transparent;
-            color: #666;
-            border: 1px solid #ccc;
+            background: #8b5cf6;
+            color: white;
+            border: none;
             padding: 6px 16px;
             border-radius: 6px;
             cursor: pointer;
             font-size: 13px;
-            font-weight: normal;
+            font-weight: 500;
             transition: all 0.2s ease;
             display: flex;
             align-items: center;
             gap: 6px;
             height: 28px;
             -webkit-app-region: no-drag;
-            margin-right: 12px;
         }
 
         .new-note-btn:hover {
-            border-color: #999;
-            background: rgba(0, 0, 0, 0.02);
+            background: #7c3aed;
         }
 
         /* Content wrapper - matching notes page */
@@ -114,7 +112,6 @@
             padding: 6px 12px;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 16px;
             color: #666;
             transition: all 0.2s;
             display: flex;
@@ -124,6 +121,11 @@
             height: 28px;
         }
 
+        .excel-upload-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
         .excel-upload-btn:hover {
             border-color: #999;
             background: rgba(0, 0, 0, 0.02);
@@ -131,21 +133,21 @@
 
         .show-more-btn {
             background: transparent;
-            border: 1px solid #ccc;
-            padding: 6px 12px;
-            border-radius: 6px;
+            border: none;
+            padding: 6px 0;
             cursor: pointer;
             font-size: 13px;
-            color: #666;
+            color: #999;
             transition: all 0.2s;
             height: 28px;
             display: flex;
             align-items: center;
+            margin-top: 12px;
+            margin-bottom: 12px;
         }
 
         .show-more-btn:hover {
-            border-color: #999;
-            background: rgba(0, 0, 0, 0.02);
+            color: #666;
         }
 
         .meetings-container {
@@ -317,9 +319,6 @@
     <div class="container">
         <header class="header">
             <div class="header-spacer"></div>
-            <button class="new-note-btn" id="new-note-btn">
-                📝 Take Notes
-            </button>
         </header>
 
         <div class="content-wrapper">
@@ -328,12 +327,22 @@
                     <h1 class="section-title">Coming up</h1>
                     <div class="header-buttons">
                         <button class="excel-upload-btn" id="excel-upload-btn" title="Upload Excel file">
-                            📊
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
                         </button>
-                        <button class="show-more-btn" id="show-more-btn">
-                            Show more ▼
+                        <button class="new-note-btn" id="new-note-btn">
+                            New Note
                         </button>
                     </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end;">
+                    <button class="show-more-btn" id="show-more-btn">
+                        Show more ▼
+                    </button>
                 </div>
 
                 <div class="meetings-container" id="meetings-container">

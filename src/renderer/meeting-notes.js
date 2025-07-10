@@ -9,6 +9,7 @@ let saveTimeout;
 let isLoading = true;
 let recordingStatusInterval;
 let currentRecordingStatus = null;
+let initialNotesContent = null; // Track initial notes content for change detection
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', async () => {
@@ -139,15 +140,13 @@ function initializeQuillEditor() {
 function initializeEventListeners() {
     // Back button - wait for save before navigating
     document.getElementById('backButton').addEventListener('click', async () => {
-        await ensureNotesAreSaved();
-        window.location.href = 'index.html';
+        await handleNavigationBack();
     });
     
     // Escape key to go back - wait for save before navigating
     document.addEventListener('keydown', async (e) => {
         if (e.key === 'Escape' || (e.metaKey && e.key === 'ArrowLeft')) {
-            await ensureNotesAreSaved();
-            window.location.href = 'index.html';
+            await handleNavigationBack();
         }
     });
     
@@ -175,13 +174,21 @@ function initializeEventListeners() {
             // Force an immediate synchronous save
             try {
                 const content = quill.getContents();
+                const contentStr = JSON.stringify(content);
                 // Use sendSync for synchronous save before page unload
-                ipcRenderer.sendSync('update-meeting-notes-sync', currentMeetingId, JSON.stringify(content));
+                ipcRenderer.sendSync('update-meeting-notes-sync', currentMeetingId, contentStr);
                 console.log('Synchronous save completed');
+                // Update initial content even in sync save
+                initialNotesContent = contentStr;
             } catch (error) {
                 console.error('Error in synchronous save:', error);
             }
         }
+        
+        // Note: We don't export markdown on beforeunload because:
+        // 1. It would need to be synchronous which could block the page
+        // 2. The user might be refreshing or navigating elsewhere
+        // 3. We only export when explicitly going back to nav page
     });
     
     // Save on focus loss
@@ -251,6 +258,9 @@ async function loadMeetingData() {
         
         // Load notes content
         console.log('Loading notes for meeting:', meeting.id, 'Notes content:', meeting.notes_content);
+        // Store initial notes content for change detection
+        initialNotesContent = meeting.notes_content || null;
+        
         if (meeting.notes_content) {
             // Set loading to true temporarily while setting content
             const wasLoading = isLoading;
@@ -417,10 +427,14 @@ async function ensureNotesAreSaved() {
 async function saveNotes() {
     try {
         const content = quill.getContents();
+        const contentStr = JSON.stringify(content);
         console.log('Saving notes for meeting', currentMeetingId, content);
-        await ipcRenderer.invoke('update-meeting-notes', currentMeetingId, JSON.stringify(content));
+        await ipcRenderer.invoke('update-meeting-notes', currentMeetingId, contentStr);
         console.log('Notes saved successfully');
         setSaveStatus('saved');
+        
+        // Update initial content after successful save so we track changes from this point
+        initialNotesContent = contentStr;
     } catch (error) {
         console.error('Error saving notes:', error);
         setSaveStatus('error');
@@ -809,6 +823,49 @@ async function removeAttachmentTile(filename) {
         console.error('Error removing attachment:', error);
         setSaveStatus('error');
         alert('Error removing attachment: ' + error.message);
+    }
+}
+
+// Handle navigation back to nav page
+async function handleNavigationBack() {
+    try {
+        // Ensure notes are saved first
+        await ensureNotesAreSaved();
+        
+        // Get current notes content
+        const currentContent = quill.getContents();
+        const currentContentStr = JSON.stringify(currentContent);
+        
+        // Check if notes have changed
+        let notesChanged = false;
+        if (initialNotesContent !== currentContentStr) {
+            // Notes have changed since we loaded the page
+            notesChanged = true;
+            console.log('Notes have changed, will export markdown');
+        }
+        
+        if (notesChanged) {
+            // Delete existing markdown if any
+            await ipcRenderer.invoke('delete-meeting-markdown', currentMeetingId);
+            
+            // Export new markdown file
+            const exportResult = await ipcRenderer.invoke('export-meeting-notes-markdown', currentMeetingId);
+            if (exportResult.success) {
+                console.log('Meeting notes exported to markdown:', exportResult.filename);
+            } else {
+                console.error('Failed to export meeting notes:', exportResult.error);
+            }
+        } else {
+            console.log('Notes unchanged, skipping markdown export');
+        }
+        
+        // Navigate back to index
+        window.location.href = 'index.html';
+        
+    } catch (error) {
+        console.error('Error handling navigation back:', error);
+        // Still navigate even if export fails
+        window.location.href = 'index.html';
     }
 }
 

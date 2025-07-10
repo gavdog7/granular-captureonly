@@ -362,6 +362,34 @@ ipcMain.on('update-meeting-notes-sync', (event, meetingId, content) => {
   }
 });
 
+// Markdown export IPC handlers
+ipcMain.handle('export-meeting-notes-markdown', async (event, meetingId) => {
+  try {
+    return await database.exportMeetingNotesAsMarkdown(meetingId);
+  } catch (error) {
+    console.error('Error exporting meeting notes as markdown:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('check-notes-changed', async (event, meetingId, currentContent) => {
+  try {
+    return await database.checkIfNotesChanged(meetingId, currentContent);
+  } catch (error) {
+    console.error('Error checking if notes changed:', error);
+    return true; // Consider changed on error
+  }
+});
+
+ipcMain.handle('delete-meeting-markdown', async (event, meetingId) => {
+  try {
+    return await database.deleteMeetingMarkdownExport(meetingId);
+  } catch (error) {
+    console.error('Error deleting markdown export:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Synchronous version for stopping recording on page unload
 ipcMain.on('stop-recording-sync', (event, meetingId) => {
   try {

@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { app, shell } = require('electron');
 const { dateOverride } = require('./date-override');
+const { generateMarkdownDocument } = require('./quill-to-markdown');
 
 class Database {
   constructor() {
@@ -411,6 +412,83 @@ class Database {
     } catch (error) {
       console.error('Error removing attachment:', error);
       throw error;
+    }
+  }
+
+  async exportMeetingNotesAsMarkdown(meetingId) {
+    try {
+      // Get meeting data
+      const meeting = await this.getMeetingById(meetingId);
+      if (!meeting) {
+        throw new Error('Meeting not found');
+      }
+
+      // Generate markdown content
+      const markdownContent = generateMarkdownDocument(meeting);
+
+      // Determine file path (alongside audio recordings)
+      const userDataPath = app.getPath('userData');
+      const dateStr = meeting.start_time.split('T')[0];
+      const meetingDir = path.join(userDataPath, 'assets', dateStr, meeting.folder_name);
+      await fs.ensureDir(meetingDir);
+
+      // Create filename
+      const filename = `${meeting.folder_name}-notes.md`;
+      const filePath = path.join(meetingDir, filename);
+
+      // Write markdown file
+      await fs.writeFile(filePath, markdownContent, 'utf8');
+
+      return { 
+        success: true, 
+        filePath,
+        filename,
+        content: markdownContent
+      };
+    } catch (error) {
+      console.error('Error exporting meeting notes as markdown:', error);
+      throw error;
+    }
+  }
+
+  async checkIfNotesChanged(meetingId, currentNotesContent) {
+    try {
+      const meeting = await this.getMeetingById(meetingId);
+      if (!meeting) {
+        return true; // Consider changed if meeting not found
+      }
+
+      // Compare stored notes with current notes
+      return meeting.notes_content !== currentNotesContent;
+    } catch (error) {
+      console.error('Error checking if notes changed:', error);
+      return true; // Consider changed on error
+    }
+  }
+
+  async deleteMeetingMarkdownExport(meetingId) {
+    try {
+      const meeting = await this.getMeetingById(meetingId);
+      if (!meeting) {
+        return { success: false, error: 'Meeting not found' };
+      }
+
+      // Determine file path
+      const userDataPath = app.getPath('userData');
+      const dateStr = meeting.start_time.split('T')[0];
+      const filename = `${meeting.folder_name}-notes.md`;
+      const filePath = path.join(userDataPath, 'assets', dateStr, meeting.folder_name, filename);
+
+      // Check if file exists and delete it
+      if (await fs.pathExists(filePath)) {
+        await fs.remove(filePath);
+        return { success: true, deleted: true };
+      }
+
+      return { success: true, deleted: false };
+    } catch (error) {
+      console.error('Error deleting markdown export:', error);
+      return { success: false, error: error.message };
     }
   }
 

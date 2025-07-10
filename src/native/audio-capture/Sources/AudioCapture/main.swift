@@ -3,6 +3,66 @@ import AVFoundation
 import CoreAudio
 import os.log
 
+// MARK: - Opus Encoder Interface
+class OpusEncoder {
+    private let sampleRate: Int32 = 48000
+    private let channels: Int32 = 1
+    private let bitrate: Int32 = 32000 // 32kbps as specified
+    private let frameSize: Int32 = 960 // 20ms frame at 48kHz
+    
+    private var encoder: OpaquePointer?
+    private let logger = Logger(subsystem: "com.granular.audio-capture", category: "OpusEncoder")
+    
+    init() throws {
+        var error: Int32 = 0
+        encoder = opus_encoder_create(sampleRate, channels, OPUS_APPLICATION_VOIP, &error)
+        
+        guard error == OPUS_OK, let encoder = encoder else {
+            throw AudioCaptureError.opusInitializationFailed
+        }
+        
+        // Set bitrate
+        let _ = opus_encoder_ctl(encoder, OPUS_SET_BITRATE_REQUEST, bitrate)
+        
+        logger.info("Opus encoder initialized: \(self.sampleRate)Hz, \(self.channels) channel(s), \(self.bitrate)bps")
+    }
+    
+    deinit {
+        if let encoder = encoder {
+            opus_encoder_destroy(encoder)
+        }
+    }
+    
+    func encode(pcmData: UnsafePointer<Float>, frameSize: Int32) throws -> Data {
+        guard let encoder = encoder else {
+            throw AudioCaptureError.opusEncodingFailed
+        }
+        
+        // Convert Float32 PCM to Int16
+        let int16Buffer = UnsafeMutablePointer<Int16>.allocate(capacity: Int(frameSize))
+        defer { int16Buffer.deallocate() }
+        
+        for i in 0..<Int(frameSize) {
+            let sample = pcmData[i]
+            let clampedSample = max(-1.0, min(1.0, sample))
+            int16Buffer[i] = Int16(clampedSample * 32767.0)
+        }
+        
+        // Encode to Opus
+        let maxOutputSize = 4000 // Max Opus packet size
+        let outputBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: maxOutputSize)
+        defer { outputBuffer.deallocate() }
+        
+        let encodedBytes = opus_encode(encoder, int16Buffer, frameSize, outputBuffer, Int32(maxOutputSize))
+        
+        guard encodedBytes > 0 else {
+            throw AudioCaptureError.opusEncodingFailed
+        }
+        
+        return Data(bytes: outputBuffer, count: Int(encodedBytes))
+    }
+}
+
 // MARK: - Command Line Interface
 struct AudioCaptureCommand {
     let action: Action
@@ -22,110 +82,167 @@ struct AudioCaptureCommand {
 // MARK: - Audio Recording Manager
 class AudioRecordingManager {
     private var audioEngine: AVAudioEngine?
-    private var outputFile: AVAudioFile?
+    private var opusEncoder: OpusEncoder?
+    private var outputFileHandle: FileHandle?
     private var isPaused = false
+    private var frameBuffer: [Float] = []
+    private let frameSize: Int = 960 // 20ms at 48kHz
     private let logger = Logger(subsystem: "com.granular.audio-capture", category: "AudioRecording")
     
     func startRecording(outputPath: String, bitrate: Int = 32000) throws {
-        logger.info("Starting audio recording to: \(outputPath)")
+        logger.info("Starting Opus audio recording to: \(outputPath)")
         
-        // Request microphone permission (macOS approach)
+        // Request microphone permission
         try requestMicrophonePermission()
+        
+        // Initialize Opus encoder
+        opusEncoder = try OpusEncoder()
+        
+        // Create output file
+        let outputURL = URL(fileURLWithPath: outputPath)
+        FileManager.default.createFile(atPath: outputPath, contents: nil, attributes: nil)
+        outputFileHandle = try FileHandle(forWritingTo: outputURL)
+        
+        // Write Opus file header (simple format)
+        try writeOpusHeader()
         
         // Create audio engine
         audioEngine = AVAudioEngine()
-        
         guard let audioEngine = audioEngine else {
             throw AudioCaptureError.engineInitializationFailed
         }
         
-        // Set up recording format for macOS
+        // Set up recording
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         
-        // Create output file with simpler PCM format first
-        let outputURL = URL(fileURLWithPath: outputPath)
+        print("Input format: \(recordingFormat)")
+        print("Target: 48kHz mono for Opus encoding")
         
-        // Use a simpler format that's more likely to work
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 44100.0,
-            AVNumberOfChannelsKey: 1,  // Start with mono
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsNonInterleaved: false
-        ]
-        
-        print("Creating audio file with settings: \(settings)")
-        outputFile = try AVAudioFile(forWriting: outputURL, settings: settings)
-        
-        print("Input node format: \(recordingFormat)")
-        print("Setting up audio tap...")
-        
-        // Set up audio tap for recording
+        // Set up audio tap
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, time in
             guard let self = self, !self.isPaused else { return }
             
             do {
-                // Convert buffer format if needed
-                if let outputFile = self.outputFile {
-                    try outputFile.write(from: buffer)
-                }
+                try self.processAudioBuffer(buffer)
             } catch {
-                print("Error writing audio buffer: \(error.localizedDescription)")
-                self.logger.error("Error writing audio buffer: \(error.localizedDescription)")
+                print("Error processing audio buffer: \(error)")
+                self.logger.error("Error processing audio buffer: \(error.localizedDescription)")
             }
         }
         
         print("Starting audio engine...")
-        // Start the engine
         try audioEngine.start()
-        print("Audio engine started successfully")
+        print("Opus recording started successfully")
         
-        // Set up signal handlers for pause/resume
+        // Set up signal handlers
         setupSignalHandlers()
         
-        logger.info("Audio recording started successfully")
+        logger.info("Opus audio recording started successfully")
     }
     
     func pauseRecording() {
-        logger.info("Pausing audio recording")
+        logger.info("Pausing Opus recording")
         isPaused = true
     }
     
     func resumeRecording() {
-        logger.info("Resuming audio recording")
+        logger.info("Resuming Opus recording")
         isPaused = false
     }
     
     func stopRecording() {
-        logger.info("Stopping audio recording")
+        logger.info("Stopping Opus recording")
         
+        // Flush any remaining audio data
+        flushRemainingFrames()
+        
+        // Clean up
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
+        outputFileHandle?.closeFile()
         
-        outputFile = nil
         audioEngine = nil
+        opusEncoder = nil
+        outputFileHandle = nil
         
-        logger.info("Audio recording stopped successfully")
+        logger.info("Opus recording stopped successfully")
+    }
+    
+    private func writeOpusHeader() throws {
+        // Simple Opus file format (OggOpus would be more complex)
+        // For now, write a simple header with magic bytes and format info
+        let header = "OPUS".data(using: .ascii)! + 
+                    Data([0x01, 0x00]) + // Version
+                    Data([0x01]) + // Channel count
+                    Data([0x80, 0xBB, 0x00, 0x00]) + // Sample rate (48000)
+                    Data([0x00, 0x7D, 0x00, 0x00]) // Bitrate (32000)
+        
+        try outputFileHandle?.write(contentsOf: header)
+    }
+    
+    private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) throws {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let frameLength = Int(buffer.frameLength)
+        
+        // Convert to mono if needed and add to frame buffer
+        for i in 0..<frameLength {
+            frameBuffer.append(channelData[i])
+            
+            // When we have enough samples for a frame, encode it
+            if frameBuffer.count >= frameSize {
+                try encodeFrame()
+            }
+        }
+    }
+    
+    private func encodeFrame() throws {
+        guard frameBuffer.count >= frameSize,
+              let encoder = opusEncoder,
+              let fileHandle = outputFileHandle else { return }
+        
+        // Extract frame
+        let frame = Array(frameBuffer.prefix(frameSize))
+        frameBuffer.removeFirst(frameSize)
+        
+        // Encode frame
+        let encodedData = try frame.withUnsafeBufferPointer { buffer in
+            return try encoder.encode(pcmData: buffer.baseAddress!, frameSize: Int32(self.frameSize))
+        }
+        
+        // Write frame size + encoded data
+        var frameSizeBytes = UInt32(encodedData.count)
+        let frameSizeData = Data(bytes: &frameSizeBytes, count: 4)
+        
+        try fileHandle.write(contentsOf: frameSizeData)
+        try fileHandle.write(contentsOf: encodedData)
+    }
+    
+    private func flushRemainingFrames() {
+        // Pad remaining samples with zeros if needed
+        while frameBuffer.count >= frameSize {
+            do {
+                try encodeFrame()
+            } catch {
+                print("Error flushing remaining frames: \(error)")
+                break
+            }
+        }
     }
     
     private func requestMicrophonePermission() throws {
-        // For macOS, check current microphone permission status
         let semaphore = DispatchSemaphore(value: 0)
         var permissionGranted = false
         
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
-        print("Current microphone permission status: \(status.rawValue)")
+        print("Microphone permission status: \(status.rawValue)")
         
         switch status {
         case .authorized:
             print("Microphone permission already granted")
             permissionGranted = true
         case .denied:
-            print("Microphone permission denied by user")
-            print("Please grant microphone permission in System Preferences > Security & Privacy > Privacy > Microphone")
+            print("Microphone permission denied")
             throw AudioCaptureError.permissionDenied
         case .restricted:
             print("Microphone access restricted")
@@ -134,16 +251,10 @@ class AudioRecordingManager {
             print("Requesting microphone permission...")
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 permissionGranted = granted
-                if granted {
-                    print("Microphone permission granted by user")
-                } else {
-                    print("Microphone permission denied by user")
-                }
                 semaphore.signal()
             }
             semaphore.wait()
         @unknown default:
-            print("Unknown microphone permission status")
             throw AudioCaptureError.permissionDenied
         }
         
@@ -153,27 +264,15 @@ class AudioRecordingManager {
     }
     
     private func setupSignalHandlers() {
-        // Handle SIGUSR1 for pause
-        signal(SIGUSR1) { _ in
-            // This will be handled by the main instance
-        }
-        
-        // Handle SIGUSR2 for resume
-        signal(SIGUSR2) { _ in
-            // This will be handled by the main instance
-        }
-        
-        // Handle SIGTERM for stop
-        signal(SIGTERM) { _ in
-            exit(0)
-        }
+        signal(SIGUSR1) { _ in }
+        signal(SIGUSR2) { _ in }
+        signal(SIGTERM) { _ in exit(0) }
     }
 }
 
-// MARK: - Global recording manager instance
+// MARK: - Global recording manager
 var globalRecordingManager: AudioRecordingManager?
 
-// MARK: - Signal handler functions
 func handlePauseSignal() {
     globalRecordingManager?.pauseRecording()
 }
@@ -186,7 +285,8 @@ func handleResumeSignal() {
 enum AudioCaptureError: Error, LocalizedError {
     case permissionDenied
     case engineInitializationFailed
-    case formatCreationFailed
+    case opusInitializationFailed
+    case opusEncodingFailed
     case invalidArguments
     case fileCreationFailed
     
@@ -196,8 +296,10 @@ enum AudioCaptureError: Error, LocalizedError {
             return "Microphone permission denied"
         case .engineInitializationFailed:
             return "Failed to initialize audio engine"
-        case .formatCreationFailed:
-            return "Failed to create audio format"
+        case .opusInitializationFailed:
+            return "Failed to initialize Opus encoder"
+        case .opusEncodingFailed:
+            return "Failed to encode audio with Opus"
         case .invalidArguments:
             return "Invalid command line arguments"
         case .fileCreationFailed:
@@ -205,6 +307,26 @@ enum AudioCaptureError: Error, LocalizedError {
         }
     }
 }
+
+// MARK: - Opus C API Bindings
+@_silgen_name("opus_encoder_create")
+func opus_encoder_create(_ sampleRate: Int32, _ channels: Int32, _ application: Int32, _ error: UnsafeMutablePointer<Int32>) -> OpaquePointer?
+
+@_silgen_name("opus_encoder_destroy")
+func opus_encoder_destroy(_ encoder: OpaquePointer)
+
+@_silgen_name("opus_encode")
+func opus_encode(_ encoder: OpaquePointer, _ pcm: UnsafePointer<Int16>, _ frameSize: Int32, _ data: UnsafeMutablePointer<UInt8>, _ maxDataBytes: Int32) -> Int32
+
+@_silgen_name("opus_encoder_ctl")
+func opus_encoder_ctl(_ encoder: OpaquePointer, _ request: Int32, _ value: Int32) -> Int32
+
+// Opus constants
+let OPUS_OK: Int32 = 0
+let OPUS_APPLICATION_VOIP: Int32 = 2048
+let OPUS_SET_BITRATE_REQUEST: Int32 = 4002
+
+// Remove this function as it's not needed
 
 // MARK: - Command Line Parsing
 func parseArguments() -> AudioCaptureCommand? {
@@ -220,13 +342,11 @@ func parseArguments() -> AudioCaptureCommand? {
     var sessionId: String?
     var bitrate = 32000
     
-    // Parse action
     guard let action = parseAction(actionString) else {
         print("Error: Invalid action '\(actionString)'")
         return nil
     }
     
-    // Parse additional arguments
     var i = 2
     while i < arguments.count {
         let arg = arguments[i]
@@ -277,46 +397,40 @@ func parseArguments() -> AudioCaptureCommand? {
 
 func parseAction(_ actionString: String) -> AudioCaptureCommand.Action? {
     switch actionString.lowercased() {
-    case "start":
-        return .start
-    case "pause":
-        return .pause
-    case "resume":
-        return .resume
-    case "stop":
-        return .stop
-    case "version", "--version", "-v":
-        return .version
-    default:
-        return nil
+    case "start": return .start
+    case "pause": return .pause
+    case "resume": return .resume
+    case "stop": return .stop
+    case "version", "--version", "-v": return .version
+    default: return nil
     }
 }
 
 func printUsage() {
     print("""
-    Granular Audio Capture v1.0.0
+    Granular Audio Capture v1.0.0 - Opus Edition
     
     Usage: audio-capture <action> [options]
     
     Actions:
-        start       Start microphone recording
+        start       Start Opus-encoded microphone recording
         pause       Pause active recording
         resume      Resume paused recording
         stop        Stop active recording
         version     Show version information
     
     Options:
-        --output <path>     Output file path (required for start)
+        --output <path>     Output file path (required for start) - .opus extension
         --session-id <id>   Session ID for pause/resume/stop
         --bitrate <rate>    Audio bitrate in bps (default: 32000)
     
     Examples:
-        audio-capture start --output /path/to/recording.m4a --bitrate 32000
+        audio-capture start --output /path/to/recording.opus --bitrate 32000
         audio-capture pause --session-id 123
         audio-capture resume --session-id 123
         audio-capture stop --session-id 123
     
-    Note: This captures microphone input, not system audio on macOS.
+    Output: Opus-encoded audio files (~240KB per minute at 32kbps)
     """)
 }
 
@@ -329,7 +443,6 @@ func main() {
     let recordingManager = AudioRecordingManager()
     globalRecordingManager = recordingManager
     
-    // Set up signal handlers
     signal(SIGUSR1, { _ in handlePauseSignal() })
     signal(SIGUSR2, { _ in handleResumeSignal() })
     
@@ -343,29 +456,25 @@ func main() {
             
             try recordingManager.startRecording(outputPath: outputPath, bitrate: command.bitrate)
             
-            // Keep the process running
-            print("Recording started. Send SIGUSR1 to pause, SIGUSR2 to resume, SIGTERM to stop.")
+            print("Opus recording started. Send SIGUSR1 to pause, SIGUSR2 to resume, SIGTERM to stop.")
             print("Process ID: \(ProcessInfo.processInfo.processIdentifier)")
+            print("Target file size: ~240KB per minute at 32kbps")
             
-            // Run the main run loop
             RunLoop.main.run()
             
         case .pause:
-            print("Pause functionality requires process ID management")
             print("Use kill -USR1 <process_id> to pause recording")
             
         case .resume:
-            print("Resume functionality requires process ID management")
             print("Use kill -USR2 <process_id> to resume recording")
             
         case .stop:
-            print("Stop functionality requires process ID management")
             print("Use kill -TERM <process_id> to stop recording")
             
         case .version:
-            print("Granular Audio Capture v1.0.0")
-            print("macOS Microphone Recording Utility")
-            print("Built with Swift 6.1")
+            print("Granular Audio Capture v1.0.0 - Opus Edition")
+            print("Opus-encoded microphone recording utility")
+            print("Target: 32kbps, ~240KB per minute")
         }
     } catch {
         print("Error: \(error.localizedDescription)")

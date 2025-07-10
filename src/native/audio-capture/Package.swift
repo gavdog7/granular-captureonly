@@ -9,14 +9,18 @@ let package = Package(
     products: [
         .executable(name: "audio-capture", targets: ["AudioCapture"])
     ],
-    dependencies: [
-        // Add dependencies here if needed
-    ],
+    dependencies: [],
     targets: [
         .executableTarget(
             name: "AudioCapture",
             dependencies: [],
-            path: "Sources/AudioCapture"
+            path: "Sources/AudioCapture",
+            linkerSettings: [
+                .linkedLibrary("opus"),
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("CoreAudio"),
+                .unsafeFlags(["-L/opt/homebrew/lib", "-I/opt/homebrew/include"])
+            ]
         )
     ]
 )

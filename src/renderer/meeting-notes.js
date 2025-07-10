@@ -164,8 +164,8 @@ function initializeEventListeners() {
     
     // Escape key to go back - wait for save before navigating
     document.addEventListener('keydown', async (e) => {
-        if (e.key === 'Escape' || (e.metaKey && e.key === 'ArrowLeft')) {
-            console.log('⌨️ Escape/back key pressed!');
+        if (e.key === 'Escape') {
+            console.log('⌨️ Escape key pressed!');
             e.preventDefault(); // Prevent default behavior
             await handleNavigationBack();
         }

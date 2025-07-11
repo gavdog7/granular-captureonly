@@ -299,6 +299,32 @@ class GoogleDriveService {
     }
   }
 
+  async deleteFolder(folderId) {
+    if (!this.drive) {
+      throw new Error('Google Drive not initialized. Please authenticate first.');
+    }
+
+    try {
+      console.log(`🗑️ Deleting Google Drive folder: ${folderId}`);
+      
+      // Delete the folder and all its contents
+      await this.drive.files.delete({
+        fileId: folderId
+      });
+      
+      console.log(`✅ Successfully deleted Google Drive folder: ${folderId}`);
+      return { success: true };
+    } catch (error) {
+      if (error.code === 401) {
+        await this.refreshTokens();
+        return this.deleteFolder(folderId);
+      }
+      
+      console.error('Error deleting Google Drive folder:', error);
+      throw new Error(`Failed to delete Google Drive folder: ${error.message}`);
+    }
+  }
+
   logout() {
     this.store.delete('googleTokens');
     this.oauth2Client.setCredentials({});

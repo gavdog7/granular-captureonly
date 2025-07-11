@@ -33,7 +33,8 @@ class GoogleDriveService {
 
   generateAuthUrl() {
     const scopes = [
-      'https://www.googleapis.com/auth/drive.file'
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/drive.readonly'
     ];
 
     return this.oauth2Client.generateAuthUrl({
@@ -171,6 +172,131 @@ class GoogleDriveService {
     });
 
     return response.data.files.length > 0 ? response.data.files[0] : null;
+  }
+
+  async findNotesFolder() {
+    if (!this.drive) {
+      throw new Error('Google Drive not initialized. Please authenticate first.');
+    }
+
+    const query = `name='Notes' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    
+    try {
+      const response = await this.drive.files.list({
+        q: query,
+        fields: 'files(id, name)'
+      });
+
+      if (response.data.files.length > 0) {
+        return response.data.files[0].id;
+      }
+      
+      return null;
+    } catch (error) {
+      if (error.code === 401) {
+        await this.refreshTokens();
+        return this.findNotesFolder();
+      }
+      throw error;
+    }
+  }
+
+  async findCalendarFileInDrive() {
+    if (!this.drive) {
+      console.log('Google Drive not initialized, skipping calendar file search');
+      return null;
+    }
+
+    try {
+      const notesFolderId = await this.findNotesFolder();
+      if (!notesFolderId) {
+        console.log('Notes folder not found in Google Drive');
+        return null;
+      }
+
+      // Search for calendar.xlsx in the Notes folder and all subfolders
+      const query = `name='calendar.xlsx' and '${notesFolderId}' in parents and trashed=false`;
+      
+      const response = await this.drive.files.list({
+        q: query,
+        fields: 'files(id, name, modifiedTime, size)'
+      });
+
+      if (response.data.files.length > 0) {
+        const file = response.data.files[0];
+        console.log(`Found calendar.xlsx in Google Drive: ${file.name} (modified: ${file.modifiedTime})`);
+        return file;
+      }
+
+      // Also search in date subfolders in case it's stored there
+      const dateSubfoldersQuery = `mimeType='application/vnd.google-apps.folder' and '${notesFolderId}' in parents and trashed=false`;
+      const dateFoldersResponse = await this.drive.files.list({
+        q: dateSubfoldersQuery,
+        fields: 'files(id, name)'
+      });
+
+      for (const dateFolder of dateFoldersResponse.data.files) {
+        const calendarInDateFolder = `name='calendar.xlsx' and '${dateFolder.id}' in parents and trashed=false`;
+        const calendarResponse = await this.drive.files.list({
+          q: calendarInDateFolder,
+          fields: 'files(id, name, modifiedTime, size)'
+        });
+
+        if (calendarResponse.data.files.length > 0) {
+          const file = calendarResponse.data.files[0];
+          console.log(`Found calendar.xlsx in Google Drive subfolder ${dateFolder.name}: ${file.name} (modified: ${file.modifiedTime})`);
+          return file;
+        }
+      }
+
+      console.log('No calendar.xlsx file found in Google Drive Notes folder');
+      return null;
+
+    } catch (error) {
+      if (error.code === 401) {
+        await this.refreshTokens();
+        return this.findCalendarFileInDrive();
+      }
+      console.error('Error searching for calendar file in Google Drive:', error);
+      return null;
+    }
+  }
+
+  async downloadFile(fileId, localPath) {
+    if (!this.drive) {
+      throw new Error('Google Drive not initialized. Please authenticate first.');
+    }
+
+    try {
+      // Ensure the directory exists
+      await fs.ensureDir(path.dirname(localPath));
+
+      const response = await this.drive.files.get({
+        fileId: fileId,
+        alt: 'media'
+      }, {
+        responseType: 'stream'
+      });
+
+      const writer = fs.createWriteStream(localPath);
+      response.data.pipe(writer);
+
+      return new Promise((resolve, reject) => {
+        writer.on('finish', () => {
+          console.log(`Downloaded calendar.xlsx from Google Drive to: ${localPath}`);
+          resolve(localPath);
+        });
+        writer.on('error', reject);
+        response.data.on('error', reject);
+      });
+
+    } catch (error) {
+      if (error.code === 401) {
+        await this.refreshTokens();
+        return this.downloadFile(fileId, localPath);
+      }
+      throw error;
+    }
   }
 
   logout() {

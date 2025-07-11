@@ -202,10 +202,7 @@ async function initializeApp() {
       }
     });
 
-    meetingLoader = new MeetingLoader(database, store);
-    audioRecorder = new AudioRecorder(database);
-    
-    // Initialize Google Drive service and Upload service
+    // Initialize Google Drive service first
     googleDriveService = new GoogleDriveService(store);
     try {
       await googleDriveService.initializeOAuth();
@@ -213,6 +210,10 @@ async function initializeApp() {
     } catch (error) {
       console.warn('Google Drive service initialization failed (will retry on first upload):', error.message);
     }
+    
+    // Initialize services with Google Drive support
+    meetingLoader = new MeetingLoader(database, store, googleDriveService);
+    audioRecorder = new AudioRecorder(database);
     
     uploadService = new UploadService(database, googleDriveService, mainWindow);
     await uploadService.initialize();

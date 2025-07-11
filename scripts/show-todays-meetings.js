@@ -155,7 +155,7 @@ async function showTodaysMeetings() {
     // Initialize meeting loader
     const store = new MockStore();
     store.set('excelFilePath', excelPath);
-    const meetingLoader = new MeetingLoader(database, store);
+    const meetingLoader = new MeetingLoader(database, store, null); // No Google Drive in testing
     
     // Load meetings
     console.log('📊 Loading meetings from Excel...');

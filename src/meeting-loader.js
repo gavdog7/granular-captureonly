@@ -4,9 +4,10 @@ const fs = require('fs-extra');
 const { dateOverride } = require('./date-override');
 
 class MeetingLoader {
-  constructor(database, store) {
+  constructor(database, store, googleDriveService = null) {
     this.database = database;
     this.store = store;
+    this.googleDriveService = googleDriveService;
     this.lastParsedTime = null;
     this.cachedMeetings = [];
   }
@@ -419,6 +420,75 @@ class MeetingLoader {
       // Ensure assets directory exists
       await fs.ensureDir(assetsDir);
       
+      // 1. Get local calendar files
+      const localFiles = await this.getLocalCalendarFiles(assetsDir);
+      
+      // 2. Get Google Drive calendar file if service is available
+      let driveFile = null;
+      if (this.googleDriveService && this.googleDriveService.isAuthenticated()) {
+        try {
+          driveFile = await this.googleDriveService.findCalendarFileInDrive();
+        } catch (error) {
+          console.warn('Failed to search Google Drive for calendar file:', error.message);
+        }
+      }
+      
+      // 3. Combine all sources
+      const allFiles = [...localFiles];
+      if (driveFile) {
+        allFiles.push({
+          name: driveFile.name,
+          path: 'google-drive', // Placeholder - will be downloaded
+          modifiedTime: new Date(driveFile.modifiedTime),
+          modifiedTimeString: new Date(driveFile.modifiedTime).toLocaleString(),
+          source: 'googledrive',
+          fileId: driveFile.id
+        });
+      }
+      
+      if (allFiles.length === 0) {
+        console.log(`📂 No calendar*.xlsx files found locally in: ${assetsDir}`);
+        if (this.googleDriveService && this.googleDriveService.isAuthenticated()) {
+          console.log(`📂 No calendar.xlsx found in Google Drive Notes folder`);
+        } else {
+          console.log(`📂 Google Drive not authenticated - only checking local files`);
+        }
+        return null;
+      }
+      
+      // 4. Sort by most recent modification date (newest first)
+      allFiles.sort((a, b) => b.modifiedTime - a.modifiedTime);
+      
+      const selectedFile = allFiles[0];
+      console.log(`📅 Found ${allFiles.length} calendar file(s) across all sources:`);
+      allFiles.forEach((file, index) => {
+        const marker = index === 0 ? '→' : ' ';
+        const source = file.source === 'googledrive' ? '[Google Drive]' : '[Local]';
+        console.log(`  ${marker} ${file.name} ${source} (modified: ${file.modifiedTimeString})`);
+      });
+      
+      // 5. Download from Google Drive if that's the most recent
+      if (selectedFile.source === 'googledrive') {
+        const tempDir = path.join(__dirname, '../temp');
+        const tempPath = path.join(tempDir, 'calendar-from-drive.xlsx');
+        
+        console.log(`📅 Most recent file is from Google Drive, downloading...`);
+        await this.googleDriveService.downloadFile(selectedFile.fileId, tempPath);
+        console.log(`📅 Using Google Drive file: ${selectedFile.name}`);
+        return tempPath;
+      }
+      
+      console.log(`📅 Using local file: ${selectedFile.name}`);
+      return selectedFile.path;
+      
+    } catch (error) {
+      console.error('Error finding calendar file:', error);
+      return null;
+    }
+  }
+
+  async getLocalCalendarFiles(assetsDir) {
+    try {
       // Read all files in the assets directory
       const files = await fs.readdir(assetsDir);
       
@@ -429,12 +499,10 @@ class MeetingLoader {
       );
       
       if (calendarFiles.length === 0) {
-        console.log(`📂 No calendar*.xlsx files found in: ${assetsDir}`);
-        console.log(`📂 Available files: ${files.join(', ')}`);
-        return null;
+        return [];
       }
       
-      // Get file stats and sort by most recent modification date
+      // Get file stats for local files
       const filesWithStats = await Promise.all(
         calendarFiles.map(async (file) => {
           const filePath = path.join(assetsDir, file);
@@ -443,27 +511,17 @@ class MeetingLoader {
             name: file,
             path: filePath,
             modifiedTime: stats.mtime,
-            modifiedTimeString: stats.mtime.toLocaleString()
+            modifiedTimeString: stats.mtime.toLocaleString(),
+            source: 'local'
           };
         })
       );
       
-      // Sort by most recent modification date (newest first)
-      filesWithStats.sort((a, b) => b.modifiedTime - a.modifiedTime);
-      
-      const selectedFile = filesWithStats[0];
-      console.log(`📅 Found ${filesWithStats.length} calendar file(s):`);
-      filesWithStats.forEach((file, index) => {
-        const marker = index === 0 ? '→' : ' ';
-        console.log(`  ${marker} ${file.name} (modified: ${file.modifiedTimeString})`);
-      });
-      console.log(`📅 Using most recent: ${selectedFile.name}`);
-      
-      return selectedFile.path;
+      return filesWithStats;
       
     } catch (error) {
-      console.error('Error finding calendar file:', error);
-      return null;
+      console.error('Error getting local calendar files:', error);
+      return [];
     }
   }
 }

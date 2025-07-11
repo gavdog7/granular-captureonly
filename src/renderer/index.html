@@ -410,10 +410,13 @@
             display: none;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
-            color: #666;
+            font-size: 11px;
+            color: #ddd;
             transition: all 0.2s;
             z-index: 10;
+            line-height: 1;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-weight: normal;
         }
 
         .delete-cross:hover {
@@ -437,28 +440,44 @@
             border-color: #ff4444;
         }
 
+        .meeting-item.delete-mode .meeting-title,
+        .meeting-item.delete-mode .meeting-time,
+        .meeting-item.delete-mode .meeting-participants {
+            color: #999 !important;
+            opacity: 0.6;
+        }
+
+        .meeting-item.delete-mode .date-badge {
+            background: #999 !important;
+            opacity: 0.6;
+        }
+
         .delete-confirm {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(255, 68, 68, 0.1);
-            border: 2px dashed #ff4444;
-            border-radius: 8px;
-            padding: 12px;
             cursor: pointer;
             transition: all 0.2s;
             z-index: 5;
         }
 
-        .delete-confirm:hover {
-            background: rgba(255, 68, 68, 0.2);
+        .delete-confirm:hover .trash-emoji {
+            transform: scale(1.1);
         }
 
         .delete-confirm .trash-emoji {
-            font-size: 24px;
+            font-size: 32px;
+            color: #ff4444 !important;
             display: block;
             text-align: center;
+            transition: transform 0.2s;
+            filter: none;
+            background: none;
+            border: none;
+            text-shadow: none;
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1;
         }
     </style>
 </head>

@@ -417,7 +417,7 @@ class MeetingApp {
         }
 
         meetingDiv.innerHTML = `
-            <div class="delete-cross" title="Delete meeting">×</div>
+            <div class="delete-cross" title="Delete meeting">✕</div>
             <div class="meeting-header">
                 <div class="date-badge">${dateStr}</div>
                 <div class="meeting-info">
@@ -663,10 +663,10 @@ class MeetingApp {
         // Switch to delete mode
         meetingDiv.classList.add('delete-mode');
         
-        // Add trash emoji confirm button
+        // Add delete icon confirm button (using big X)
         const confirmButton = document.createElement('div');
         confirmButton.className = 'delete-confirm';
-        confirmButton.innerHTML = '<span class="trash-emoji">🗑️</span>';
+        confirmButton.innerHTML = '<span class="trash-emoji">✕</span>';
         confirmButton.title = 'Click to permanently delete this meeting';
         
         // Add event listener to confirm deletion

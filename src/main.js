@@ -167,7 +167,7 @@ async function initializeApp() {
   try {
     // 🧪 TEST MODE: Override date for testing
     // TO DISABLE: Comment out the line below
-    setupTestDate('2025-07-10'); // Thursday, July 10, 2025
+    // setupTestDate('2025-07-11'); // Friday, July 11, 2025
     
     // Request microphone permission for audio recording
     if (process.platform === 'darwin') {

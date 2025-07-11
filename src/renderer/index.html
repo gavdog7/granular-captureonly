@@ -181,6 +181,7 @@
             cursor: pointer;
             transition: all 0.2s;
             border: 1px solid #e0e0e0;
+            position: relative;
         }
 
         .meeting-item:hover {
@@ -350,12 +351,12 @@
         }
 
         .google-auth-btn {
-            background: #4285f4;
-            border: none;
+            background: transparent;
+            border: 1px solid #ccc;
             padding: 6px 12px;
             border-radius: 6px;
             cursor: pointer;
-            color: white;
+            color: #666;
             transition: all 0.2s;
             display: flex;
             align-items: center;
@@ -366,7 +367,8 @@
         }
 
         .google-auth-btn:hover {
-            background: #3367d6;
+            border-color: #999;
+            background: rgba(0, 0, 0, 0.02);
         }
 
         .google-auth-btn:disabled {
@@ -374,13 +376,89 @@
             cursor: not-allowed;
         }
 
-        .google-auth-btn.authenticated {
-            background: #34a853;
+        .google-auth-btn.disconnected {
+            border-color: #ffb3ba;
+            color: #ffb3ba;
+        }
+        
+        .google-auth-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+        
+        .google-auth-btn:focus {
+            outline: 2px solid #8b5cf6;
+            outline-offset: 2px;
         }
         
         .show-more-btn:focus {
             outline: 2px solid #d0d0d0;
             outline-offset: 2px;
+        }
+
+        /* Delete functionality styles */
+        .delete-cross {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 20px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ddd;
+            border-radius: 50%;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #666;
+            transition: all 0.2s;
+            z-index: 10;
+        }
+
+        .delete-cross:hover {
+            background: #ff4444;
+            color: white;
+            border-color: #ff4444;
+        }
+
+        .meeting-item:hover .delete-cross {
+            display: flex;
+        }
+
+        .meeting-item.delete-mode {
+            border: 2px solid #ff4444 !important;
+            background: rgba(255, 68, 68, 0.05);
+        }
+
+        .meeting-item.delete-mode .delete-cross {
+            background: #ff4444;
+            color: white;
+            border-color: #ff4444;
+        }
+
+        .delete-confirm {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 68, 68, 0.1);
+            border: 2px dashed #ff4444;
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 5;
+        }
+
+        .delete-confirm:hover {
+            background: rgba(255, 68, 68, 0.2);
+        }
+
+        .delete-confirm .trash-emoji {
+            font-size: 24px;
+            display: block;
+            text-align: center;
         }
     </style>
 </head>
@@ -404,7 +482,13 @@
                             </svg>
                         </button>
                         <button class="google-auth-btn" id="google-auth-btn" title="Connect Google Drive">
-                            Drive
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14,2 14,8 20,8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                                <polyline points="10,9 9,9 8,9"></polyline>
+                            </svg>
                         </button>
                         <button class="new-note-btn" id="new-note-btn">
                             New Note

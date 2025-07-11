@@ -242,12 +242,12 @@ class MeetingApp {
     updateGoogleAuthButton(isAuthenticated) {
         const btn = document.getElementById('google-auth-btn');
         if (isAuthenticated) {
-            btn.textContent = '✓ Drive';
             btn.classList.add('authenticated');
+            btn.classList.remove('disconnected');
             btn.title = 'Google Drive connected';
         } else {
-            btn.textContent = 'Drive';
             btn.classList.remove('authenticated');
+            btn.classList.add('disconnected');
             btn.title = 'Connect Google Drive';
         }
     }
@@ -417,6 +417,7 @@ class MeetingApp {
         }
 
         meetingDiv.innerHTML = `
+            <div class="delete-cross" title="Delete meeting">×</div>
             <div class="meeting-header">
                 <div class="date-badge">${dateStr}</div>
                 <div class="meeting-info">
@@ -430,8 +431,20 @@ class MeetingApp {
             </div>
         `;
 
+        // Add click handler for the meeting (navigation)
         meetingDiv.addEventListener('click', (e) => {
+            // Don't navigate if clicking delete elements
+            if (e.target.closest('.delete-cross') || e.target.closest('.delete-confirm') || meetingDiv.classList.contains('delete-mode')) {
+                return;
+            }
             this.selectMeeting(meeting);
+        });
+
+        // Add delete functionality
+        const deleteCross = meetingDiv.querySelector('.delete-cross');
+        deleteCross.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.enterDeleteMode(meetingDiv, meeting);
         });
 
         return meetingDiv;
@@ -643,6 +656,81 @@ class MeetingApp {
             }
         } else {
             console.warn(`⚠️ Could not find meeting element for ID: ${meetingId}`);
+        }
+    }
+
+    enterDeleteMode(meetingDiv, meeting) {
+        // Switch to delete mode
+        meetingDiv.classList.add('delete-mode');
+        
+        // Add trash emoji confirm button
+        const confirmButton = document.createElement('div');
+        confirmButton.className = 'delete-confirm';
+        confirmButton.innerHTML = '<span class="trash-emoji">🗑️</span>';
+        confirmButton.title = 'Click to permanently delete this meeting';
+        
+        // Add event listener to confirm deletion
+        confirmButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.confirmDeleteMeeting(meeting);
+        });
+        
+        meetingDiv.appendChild(confirmButton);
+        
+        // Add click outside to exit delete mode
+        const exitDeleteMode = (e) => {
+            if (!meetingDiv.contains(e.target)) {
+                this.exitDeleteMode(meetingDiv);
+                document.removeEventListener('click', exitDeleteMode);
+            }
+        };
+        
+        setTimeout(() => {
+            document.addEventListener('click', exitDeleteMode);
+        }, 100);
+    }
+
+    exitDeleteMode(meetingDiv) {
+        meetingDiv.classList.remove('delete-mode');
+        const confirmButton = meetingDiv.querySelector('.delete-confirm');
+        if (confirmButton) {
+            confirmButton.remove();
+        }
+    }
+
+    async confirmDeleteMeeting(meeting) {
+        try {
+            this.showSuccess(`Deleting "${meeting.title}"...`);
+            
+            // Call the main process to delete the meeting
+            const result = await ipcRenderer.invoke('delete-meeting', meeting.id);
+            
+            if (result.success) {
+                // Remove the meeting from the UI immediately
+                const meetingElement = document.querySelector(`[data-meeting-id="${meeting.id}"]`);
+                if (meetingElement) {
+                    meetingElement.remove();
+                }
+                
+                // Remove from local array
+                this.meetings = this.meetings.filter(m => m.id !== meeting.id);
+                
+                // Show success message
+                this.showSuccess(`"${meeting.title}" deleted successfully`);
+                
+                // Update the meetings count display
+                this.updateStatus(`Showing ${this.meetings.length} meetings for today`);
+                
+                // Re-render if no meetings left
+                if (this.meetings.length === 0) {
+                    this.renderMeetings();
+                }
+            } else {
+                this.showError(`Failed to delete meeting: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Error deleting meeting:', error);
+            this.showError('Failed to delete meeting: ' + error.message);
         }
     }
 

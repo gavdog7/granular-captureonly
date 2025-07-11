@@ -312,6 +312,13 @@ class Database {
     );
   }
 
+  async updateMeetingEndTime(meetingId, newEndTime) {
+    return this.run(
+      'UPDATE meetings SET end_time = ?, updated_at = ? WHERE id = ?',
+      [newEndTime, new Date().toISOString(), meetingId]
+    );
+  }
+
   async updateRecordingPaths(meetingId, oldFolderName, newFolderName) {
     try {
       // Get all recordings for this meeting
@@ -373,6 +380,19 @@ class Database {
       'UPDATE meetings SET notes_content = ?, updated_at = ? WHERE id = ?',
       [content, new Date().toISOString(), meetingId]
     );
+  }
+
+  updateMeetingEndTimeSync(meetingId, newEndTime) {
+    // Synchronous version for page unload
+    return this.db.run(
+      'UPDATE meetings SET end_time = ?, updated_at = ? WHERE id = ?',
+      [newEndTime, new Date().toISOString(), meetingId]
+    );
+  }
+
+  getMeetingByIdSync(meetingId) {
+    // Synchronous version for page unload
+    return this.db.prepare('SELECT * FROM meetings WHERE id = ?').get(meetingId);
   }
 
   async uploadAttachment(meetingId, fileInfo) {
@@ -717,6 +737,70 @@ class Database {
     } catch (error) {
       console.error('Error getting participant suggestions:', error);
       return [];
+    }
+  }
+
+  async deleteMeeting(meetingId) {
+    try {
+      // Delete related records first (due to foreign key constraints)
+      await this.run('DELETE FROM recording_sessions WHERE meeting_id = ?', [meetingId]);
+      await this.run('DELETE FROM attachments WHERE meeting_id = ?', [meetingId]);
+      
+      // Delete the meeting itself
+      const result = await this.run('DELETE FROM meetings WHERE id = ?', [meetingId]);
+      
+      if (result.changes === 0) {
+        throw new Error('Meeting not found or already deleted');
+      }
+      
+      console.log(`🗑️ Database: Deleted meeting ${meetingId} and ${result.changes} related records`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting meeting from database:', error);
+      throw error;
+    }
+  }
+
+  async deleteMeetingFiles(meetingId) {
+    try {
+      const meeting = await this.getMeetingById(meetingId);
+      if (!meeting) {
+        return { success: false, error: 'Meeting not found' };
+      }
+
+      const projectRoot = path.dirname(__dirname); // Go up from src/ to project root
+      const dateStr = meeting.start_time.split('T')[0];
+      const meetingDir = path.join(projectRoot, 'assets', dateStr, meeting.folder_name);
+
+      let deletedFiles = [];
+      let errors = [];
+
+      // Check if meeting directory exists
+      if (await fs.pathExists(meetingDir)) {
+        try {
+          // Get list of files before deletion for logging
+          const files = await fs.readdir(meetingDir);
+          deletedFiles = files;
+          
+          // Delete the entire meeting directory
+          await fs.remove(meetingDir);
+          console.log(`🗑️ Files: Deleted meeting directory: ${meetingDir}`);
+          console.log(`📁 Deleted files: ${files.join(', ')}`);
+        } catch (error) {
+          errors.push(`Failed to delete directory ${meetingDir}: ${error.message}`);
+        }
+      } else {
+        console.log(`⚠️ Meeting directory not found: ${meetingDir}`);
+      }
+
+      return {
+        success: errors.length === 0,
+        deletedFiles,
+        errors: errors.length > 0 ? errors.join('; ') : null
+      };
+    } catch (error) {
+      console.error('Error deleting meeting files:', error);
+      return { success: false, error: error.message };
     }
   }
 }

@@ -188,6 +188,15 @@ function initializeEventListeners() {
             }
         }
         
+        // Update meeting duration synchronously
+        try {
+            console.log('Page unloading, updating meeting duration');
+            ipcRenderer.sendSync('update-meeting-duration-sync', parseInt(currentMeetingId));
+            console.log('Meeting duration updated synchronously');
+        } catch (error) {
+            console.error('Error updating duration synchronously:', error);
+        }
+        
         // Save notes
         if (saveTimeout) {
             clearTimeout(saveTimeout);
@@ -1002,6 +1011,47 @@ async function removeAttachmentTile(filename) {
     }
 }
 
+// Update meeting duration to actual time spent
+async function updateMeetingDurationToActual() {
+    try {
+        // Get meeting data to find start time
+        const meeting = await ipcRenderer.invoke('get-meeting-by-id', currentMeetingId);
+        if (!meeting) {
+            console.warn('⚠️ Meeting not found, cannot update duration');
+            return;
+        }
+        
+        const startTime = new Date(meeting.start_time);
+        const actualEndTime = new Date();
+        
+        // Calculate actual duration in minutes
+        const durationMinutes = Math.round((actualEndTime - startTime) / (1000 * 60));
+        
+        // Apply minimum duration threshold (5 minutes)
+        const minimumDuration = 5;
+        if (durationMinutes < minimumDuration) {
+            console.log(`⏱️ Actual duration (${durationMinutes}min) below minimum (${minimumDuration}min), keeping original duration`);
+            return;
+        }
+        
+        // Validate that end time is after start time (handle clock changes)
+        if (actualEndTime <= startTime) {
+            console.warn('⚠️ Invalid duration detected (end time not after start time), keeping original duration');
+            return;
+        }
+        
+        console.log(`⏱️ Updating meeting duration: ${durationMinutes} minutes (from ${startTime.toLocaleTimeString()} to ${actualEndTime.toLocaleTimeString()})`);
+        
+        // Update the meeting end time in database
+        await ipcRenderer.invoke('update-meeting-end-time', currentMeetingId, actualEndTime.toISOString());
+        
+        console.log('✅ Meeting duration updated successfully');
+    } catch (error) {
+        console.error('Error updating meeting duration:', error);
+        throw error; // Re-throw to be caught by caller
+    }
+}
+
 // Handle navigation back to nav page
 async function handleNavigationBack() {
     console.log('🔙 handleNavigationBack called');
@@ -1013,6 +1063,15 @@ async function handleNavigationBack() {
         // Ensure notes are saved first
         console.log('💾 Ensuring notes are saved...');
         await ensureNotesAreSaved();
+        
+        // Update meeting duration to actual time spent
+        try {
+            console.log('⏱️ Updating meeting duration to actual time...');
+            await updateMeetingDurationToActual();
+        } catch (durationError) {
+            console.warn('⚠️ Failed to update meeting duration (non-critical):', durationError);
+            // Don't prevent navigation - this is a nice-to-have feature
+        }
         
         // Stop recording if active and wait for database update
         if (currentRecordingStatus && currentRecordingStatus.isRecording) {

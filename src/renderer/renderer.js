@@ -75,7 +75,7 @@ class MeetingApp {
         try {
             // Create a new meeting starting at current time
             const now = new Date();
-            const endTime = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour later
+            const endTime = new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes later
             
             const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const newMeeting = {

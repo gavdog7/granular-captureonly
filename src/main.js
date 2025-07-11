@@ -330,6 +330,16 @@ ipcMain.handle('get-meeting-by-id', async (event, meetingId) => {
   }
 });
 
+ipcMain.handle('update-meeting-end-time', async (event, meetingId, newEndTime) => {
+  try {
+    await database.updateMeetingEndTime(meetingId, newEndTime);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating meeting end time:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('update-meeting-participants', async (event, meetingId, participants) => {
   try {
     await database.updateMeetingParticipants(meetingId, participants);
@@ -466,6 +476,41 @@ ipcMain.on('stop-recording-sync', (event, meetingId) => {
     }
   } catch (error) {
     console.error('Error stopping recording synchronously:', error);
+    event.returnValue = { success: false, error: error.message };
+  }
+});
+
+// Synchronous version for updating meeting duration on page unload
+ipcMain.on('update-meeting-duration-sync', (event, meetingId) => {
+  try {
+    // Get meeting data synchronously
+    const meeting = database.getMeetingByIdSync(meetingId);
+    if (!meeting) {
+      console.warn(`Meeting ${meetingId} not found for duration update`);
+      event.returnValue = { success: false, error: 'Meeting not found' };
+      return;
+    }
+    
+    const startTime = new Date(meeting.start_time);
+    const actualEndTime = new Date();
+    
+    // Calculate duration and apply minimum threshold
+    const durationMinutes = Math.round((actualEndTime - startTime) / (1000 * 60));
+    const minimumDuration = 5;
+    
+    if (durationMinutes < minimumDuration || actualEndTime <= startTime) {
+      console.log(`Meeting ${meetingId}: Duration ${durationMinutes}min not updated (below minimum or invalid)`);
+      event.returnValue = { success: true, updated: false };
+      return;
+    }
+    
+    // Update the meeting end time synchronously
+    database.updateMeetingEndTimeSync(meetingId, actualEndTime.toISOString());
+    console.log(`Meeting ${meetingId} duration updated synchronously: ${durationMinutes} minutes`);
+    event.returnValue = { success: true, updated: true, duration: durationMinutes };
+    
+  } catch (error) {
+    console.error('Error updating meeting duration synchronously:', error);
     event.returnValue = { success: false, error: error.message };
   }
 });
@@ -672,6 +717,48 @@ ipcMain.handle('get-participant-suggestions', async (event, searchTerm) => {
   } catch (error) {
     console.error('Error getting participant suggestions:', error);
     return [];
+  }
+});
+
+ipcMain.handle('delete-meeting', async (event, meetingId) => {
+  try {
+    console.log(`🗑️ Deleting meeting ${meetingId}...`);
+    
+    // Get meeting info before deletion for cleanup
+    const meeting = await database.getMeetingById(meetingId);
+    if (!meeting) {
+      return { success: false, error: 'Meeting not found' };
+    }
+    
+    console.log(`📝 Meeting to delete: "${meeting.title}" (folder: ${meeting.folder_name})`);
+    
+    // Delete from Google Drive if uploaded
+    if (meeting.upload_status === 'completed' && meeting.gdrive_folder_id) {
+      try {
+        console.log(`☁️ Deleting from Google Drive: ${meeting.gdrive_folder_id}`);
+        await googleDriveService.deleteFolder(meeting.gdrive_folder_id);
+        console.log(`✅ Successfully deleted from Google Drive`);
+      } catch (driveError) {
+        console.warn(`⚠️ Failed to delete from Google Drive: ${driveError.message}`);
+        // Continue with local deletion even if Google Drive fails
+      }
+    }
+    
+    // Delete local files (markdown and audio recordings)
+    const deleteResult = await database.deleteMeetingFiles(meetingId);
+    if (!deleteResult.success) {
+      console.warn(`⚠️ Failed to delete some files: ${deleteResult.error}`);
+    }
+    
+    // Delete from database (this will cascade to related tables)
+    await database.deleteMeeting(meetingId);
+    
+    console.log(`✅ Meeting ${meetingId} deleted successfully`);
+    return { success: true };
+    
+  } catch (error) {
+    console.error('Error deleting meeting:', error);
+    return { success: false, error: error.message };
   }
 });
 

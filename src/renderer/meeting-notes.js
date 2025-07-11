@@ -1014,6 +1014,15 @@ async function handleNavigationBack() {
         console.log('💾 Ensuring notes are saved...');
         await ensureNotesAreSaved();
         
+        // Stop recording if active and wait for database update
+        if (currentRecordingStatus && currentRecordingStatus.isRecording) {
+            console.log('🛑 Stopping recording before navigation...');
+            const stopResult = await ipcRenderer.invoke('stop-recording', parseInt(currentMeetingId));
+            if (stopResult.success) {
+                console.log('✅ Recording stopped successfully');
+            }
+        }
+        
         // Get current notes content
         const currentContent = quill.getContents();
         const currentContentStr = JSON.stringify(currentContent);

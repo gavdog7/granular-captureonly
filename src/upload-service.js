@@ -185,6 +185,7 @@ class UploadService {
 
       // 2. Audio recordings
       const recordings = await this.database.getMeetingRecordings(meetingId);
+      console.log(`🔍 Database query returned ${recordings.length} recordings for meeting ${meetingId}`);
       for (const recording of recordings) {
         if (recording.final_path && await fs.pathExists(recording.final_path)) {
           const stats = await fs.stat(recording.final_path);
@@ -198,7 +199,27 @@ class UploadService {
           });
           console.log(`🎵 Found audio file: ${recording.final_path} (${recording.duration}s)`);
         } else {
-          console.warn(`⚠️ Audio file not found: ${recording.final_path}`);
+          // Audio file not found at recorded path
+          // This can happen if meeting folder was renamed after recording
+          console.warn(`⚠️ Audio file not found at recorded path: ${recording.final_path}`);
+          
+          // Try to find the file in the current meeting folder
+          const fileName = path.basename(recording.final_path);
+          const alternativePath = path.join(meetingDir, fileName);
+          
+          if (await fs.pathExists(alternativePath)) {
+            const stats = await fs.stat(alternativePath);
+            files.push({
+              name: fileName,
+              path: alternativePath,
+              size: stats.size,
+              type: 'audio',
+              duration: recording.duration
+            });
+            console.log(`🎵 Found audio file in meeting folder: ${alternativePath} (${recording.duration}s)`);
+          } else {
+            console.error(`❌ Audio file not found in either location`);
+          }
         }
       }
 

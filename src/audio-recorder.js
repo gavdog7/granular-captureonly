@@ -40,7 +40,8 @@ class AudioRecorder {
       const finalPath = path.join(recordingDir, `${filename}.opus`);
 
       // Create recording session in database
-      const sessionId = await this.database.startRecordingSession(meetingId, finalPath);
+      const sessionResult = await this.database.startRecordingSession(meetingId, finalPath);
+      const sessionId = sessionResult.lastID;
 
       // Start native audio capture process
       const captureProcess = await this.startCaptureProcess(finalPath);
@@ -156,11 +157,13 @@ class AudioRecorder {
       }
 
       // Update database (file is already in final location)
+      console.log(`📝 Updating database for recording session ${recording.sessionId}, path: ${recording.finalPath}`);
       await this.database.endRecordingSession(
         recording.sessionId,
         recording.finalPath,
         recording.duration
       );
+      console.log(`✅ Database updated for recording session ${recording.sessionId}`);
 
       // Remove from active recordings
       this.activeRecordings.delete(meetingId);

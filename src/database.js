@@ -312,6 +312,33 @@ class Database {
     );
   }
 
+  async updateRecordingPaths(meetingId, oldFolderName, newFolderName) {
+    try {
+      // Get all recordings for this meeting
+      const recordings = await this.all(
+        'SELECT id, final_path FROM recording_sessions WHERE meeting_id = ?',
+        [meetingId]
+      );
+      
+      // Update each recording path
+      for (const recording of recordings) {
+        if (recording.final_path && recording.final_path.includes(oldFolderName)) {
+          const newPath = recording.final_path.replace(oldFolderName, newFolderName);
+          await this.run(
+            'UPDATE recording_sessions SET final_path = ? WHERE id = ?',
+            [newPath, recording.id]
+          );
+          console.log(`📝 Updated recording path from ${recording.final_path} to ${newPath}`);
+        }
+      }
+      
+      return { success: true, updated: recordings.length };
+    } catch (error) {
+      console.error('Error updating recording paths:', error);
+      throw error;
+    }
+  }
+
   async getMeetingFolderInfo(meetingId) {
     return this.get(
       'SELECT folder_name, start_time FROM meetings WHERE id = ?',
@@ -619,10 +646,21 @@ class Database {
 
   async getMeetingRecordings(meetingId) {
     try {
+      // First check all recordings for this meeting
+      const allRecordings = await this.all(
+        'SELECT * FROM recording_sessions WHERE meeting_id = ?',
+        [meetingId]
+      );
+      console.log(`🔍 All recordings for meeting ${meetingId}:`, allRecordings.length);
+      allRecordings.forEach(r => {
+        console.log(`  - Session ${r.id}: completed=${r.completed}, final_path=${r.final_path}`);
+      });
+      
       const recordings = await this.all(
         'SELECT final_path, started_at, duration FROM recording_sessions WHERE meeting_id = ? AND completed = 1',
         [meetingId]
       );
+      console.log(`✅ Completed recordings for meeting ${meetingId}:`, recordings.length);
       return recordings;
     } catch (error) {
       console.error('Error getting meeting recordings:', error);

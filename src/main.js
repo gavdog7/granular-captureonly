@@ -364,6 +364,10 @@ ipcMain.handle('update-meeting-title', async (event, meetingId, title) => {
     if (renameResult.success) {
       // Update database with new folder name
       await database.updateMeetingFolderName(meetingId, renameResult.newFolderName);
+      
+      // Update recording paths to reflect the new folder
+      await database.updateRecordingPaths(meetingId, folderInfo.folder_name, renameResult.newFolderName);
+      
       return { 
         success: true, 
         folderRenamed: true,

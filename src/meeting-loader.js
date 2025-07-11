@@ -112,11 +112,17 @@ class MeetingLoader {
 
   async getAllTodaysMeetings() {
     // Get all meetings for today including filtered ones
-    const excelFilePath = path.join(__dirname, '../docs/Calendar import xlsx/Calendar management log.xlsx');
+    // Use the same file selection logic as loadMeetingsFromExcel
+    const projectRoot = path.dirname(__dirname);
+    const assetsDir = path.join(projectRoot, 'assets');
     
-    if (!await fs.pathExists(excelFilePath)) {
-      throw new Error(`Calendar management log.xlsx not found at: ${excelFilePath}`);
+    // Find calendar files (calendar.xlsx, calendar (1).xlsx, calendar (2).xlsx, etc.)
+    const excelFilePath = await this.findCalendarFile(assetsDir);
+    
+    if (!excelFilePath) {
+      throw new Error(`Calendar Excel file not found. Please place a file named 'calendar.xlsx' (or 'calendar (1).xlsx', etc.) in the assets folder at: ${assetsDir}`);
     }
+    
 
     try {
       const workbook = XLSX.readFile(excelFilePath);
@@ -423,36 +429,11 @@ class MeetingLoader {
       // 1. Get local calendar files
       const localFiles = await this.getLocalCalendarFiles(assetsDir);
       
-      // 2. Get Google Drive calendar file if service is available
-      let driveFile = null;
-      if (this.googleDriveService && this.googleDriveService.isAuthenticated()) {
-        try {
-          driveFile = await this.googleDriveService.findCalendarFileInDrive();
-        } catch (error) {
-          console.warn('Failed to search Google Drive for calendar file:', error.message);
-        }
-      }
-      
-      // 3. Combine all sources
+      // Just use local files
       const allFiles = [...localFiles];
-      if (driveFile) {
-        allFiles.push({
-          name: driveFile.name,
-          path: 'google-drive', // Placeholder - will be downloaded
-          modifiedTime: new Date(driveFile.modifiedTime),
-          modifiedTimeString: new Date(driveFile.modifiedTime).toLocaleString(),
-          source: 'googledrive',
-          fileId: driveFile.id
-        });
-      }
       
       if (allFiles.length === 0) {
         console.log(`📂 No calendar*.xlsx files found locally in: ${assetsDir}`);
-        if (this.googleDriveService && this.googleDriveService.isAuthenticated()) {
-          console.log(`📂 No calendar.xlsx found in Google Drive Notes folder`);
-        } else {
-          console.log(`📂 Google Drive not authenticated - only checking local files`);
-        }
         return null;
       }
       
@@ -463,20 +444,8 @@ class MeetingLoader {
       console.log(`📅 Found ${allFiles.length} calendar file(s) across all sources:`);
       allFiles.forEach((file, index) => {
         const marker = index === 0 ? '→' : ' ';
-        const source = file.source === 'googledrive' ? '[Google Drive]' : '[Local]';
-        console.log(`  ${marker} ${file.name} ${source} (modified: ${file.modifiedTimeString})`);
+        console.log(`  ${marker} ${file.name} (modified: ${file.modifiedTimeString})`);
       });
-      
-      // 5. Download from Google Drive if that's the most recent
-      if (selectedFile.source === 'googledrive') {
-        const tempDir = path.join(__dirname, '../temp');
-        const tempPath = path.join(tempDir, 'calendar-from-drive.xlsx');
-        
-        console.log(`📅 Most recent file is from Google Drive, downloading...`);
-        await this.googleDriveService.downloadFile(selectedFile.fileId, tempPath);
-        console.log(`📅 Using Google Drive file: ${selectedFile.name}`);
-        return tempPath;
-      }
       
       console.log(`📅 Using local file: ${selectedFile.name}`);
       return selectedFile.path;

@@ -433,10 +433,22 @@ class MeetingApp {
 
         // Add click handler for the meeting (navigation)
         meetingDiv.addEventListener('click', (e) => {
+            console.log('🔍 DIAGNOSTIC: Meeting div clicked:', {
+                meetingTitle: meeting.title,
+                meetingId: meeting.id,
+                clickTarget: e.target.className,
+                hasDeleteCross: !!e.target.closest('.delete-cross'),
+                hasDeleteConfirm: !!e.target.closest('.delete-confirm'),
+                isDeleteMode: meetingDiv.classList.contains('delete-mode')
+            });
+            
             // Don't navigate if clicking delete elements
             if (e.target.closest('.delete-cross') || e.target.closest('.delete-confirm') || meetingDiv.classList.contains('delete-mode')) {
+                console.log('🔍 DIAGNOSTIC: Click blocked - delete element or delete mode');
                 return;
             }
+            
+            console.log('🔍 DIAGNOSTIC: Proceeding to selectMeeting');
             this.selectMeeting(meeting);
         });
 
@@ -474,6 +486,16 @@ class MeetingApp {
     }
 
     selectMeeting(meeting) {
+        // DEBUG: Log meeting data to diagnose navigation issue
+        console.log('🔍 DIAGNOSTIC: selectMeeting called with:', {
+            meetingId: meeting.id,
+            meetingTitle: meeting.title,
+            meetingIdType: typeof meeting.id,
+            showingAll: this.showingAll,
+            showingAllPastEvents: this.showingAllPastEvents,
+            fullMeeting: meeting
+        });
+        
         // Navigate to meeting notes page
         window.location.href = `meeting-notes.html?meetingId=${meeting.id}`;
     }
@@ -648,12 +670,7 @@ class MeetingApp {
             
             console.log(`✅ Updated meeting ${meetingId} visual status to: ${status}`);
             
-            // Show success message for completed uploads
-            if (status === 'completed') {
-                const meeting = this.meetings.find(m => m.id == meetingId);
-                const meetingTitle = meeting ? meeting.title : `Meeting ${meetingId}`;
-                this.showSuccess(`"${meetingTitle}" uploaded to Google Drive successfully!`);
-            }
+            // No success notification for completed uploads - visual indicator is sufficient
         } else {
             console.warn(`⚠️ Could not find meeting element for ID: ${meetingId}`);
         }
@@ -662,6 +679,12 @@ class MeetingApp {
     enterDeleteMode(meetingDiv, meeting) {
         // Switch to delete mode
         meetingDiv.classList.add('delete-mode');
+        
+        // Hide the small delete cross
+        const deleteCross = meetingDiv.querySelector('.delete-cross');
+        if (deleteCross) {
+            deleteCross.style.display = 'none';
+        }
         
         // Add delete icon confirm button (using big X)
         const confirmButton = document.createElement('div');
@@ -692,6 +715,14 @@ class MeetingApp {
 
     exitDeleteMode(meetingDiv) {
         meetingDiv.classList.remove('delete-mode');
+        
+        // Show the small delete cross again
+        const deleteCross = meetingDiv.querySelector('.delete-cross');
+        if (deleteCross) {
+            deleteCross.style.display = '';
+        }
+        
+        // Remove the big confirmation button
         const confirmButton = meetingDiv.querySelector('.delete-confirm');
         if (confirmButton) {
             confirmButton.remove();
@@ -700,8 +731,6 @@ class MeetingApp {
 
     async confirmDeleteMeeting(meeting) {
         try {
-            this.showSuccess(`Deleting "${meeting.title}"...`);
-            
             // Call the main process to delete the meeting
             const result = await ipcRenderer.invoke('delete-meeting', meeting.id);
             
@@ -714,9 +743,6 @@ class MeetingApp {
                 
                 // Remove from local array
                 this.meetings = this.meetings.filter(m => m.id !== meeting.id);
-                
-                // Show success message
-                this.showSuccess(`"${meeting.title}" deleted successfully`);
                 
                 // Update the meetings count display
                 this.updateStatus(`Showing ${this.meetings.length} meetings for today`);

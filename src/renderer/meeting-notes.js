@@ -191,7 +191,15 @@ function initializeEventListeners() {
         // Update meeting duration synchronously
         try {
             console.log('Page unloading, updating meeting duration');
-            ipcRenderer.sendSync('update-meeting-duration-sync', parseInt(currentMeetingId));
+            
+            // Validate meeting ID before sending to main process
+            const meetingId = parseInt(currentMeetingId);
+            if (isNaN(meetingId)) {
+                console.log('Skipping duration update for non-numeric meeting ID:', currentMeetingId);
+                return;
+            }
+            
+            ipcRenderer.sendSync('update-meeting-duration-sync', meetingId);
             console.log('Meeting duration updated synchronously');
         } catch (error) {
             console.error('Error updating duration synchronously:', error);

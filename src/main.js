@@ -483,6 +483,13 @@ ipcMain.on('stop-recording-sync', (event, meetingId) => {
 // Synchronous version for updating meeting duration on page unload
 ipcMain.on('update-meeting-duration-sync', (event, meetingId) => {
   try {
+    // Validate meeting ID
+    if (!meetingId || isNaN(meetingId)) {
+      console.log(`Skipping duration update for invalid meeting ID: ${meetingId}`);
+      event.returnValue = { success: true, updated: false, reason: 'Invalid meeting ID' };
+      return;
+    }
+    
     // Get meeting data synchronously
     const meeting = database.getMeetingByIdSync(meetingId);
     if (!meeting) {
@@ -636,6 +643,12 @@ ipcMain.handle('start-recording', async (event, meetingId) => {
     if (!audioRecorder) {
       throw new Error('Audio recorder not initialized');
     }
+    
+    // Validate meeting ID
+    if (!meetingId || isNaN(meetingId)) {
+      throw new Error(`Cannot start recording for invalid meeting ID: ${meetingId}`);
+    }
+    
     const result = await audioRecorder.startRecording(meetingId);
     console.log(`Recording started for meeting ${meetingId}`);
     return result;
@@ -650,6 +663,12 @@ ipcMain.handle('stop-recording', async (event, meetingId) => {
     if (!audioRecorder) {
       throw new Error('Audio recorder not initialized');
     }
+    
+    // Validate meeting ID
+    if (!meetingId || isNaN(meetingId)) {
+      throw new Error(`Cannot stop recording for invalid meeting ID: ${meetingId}`);
+    }
+    
     const result = await audioRecorder.stopRecording(meetingId);
     console.log(`Recording stopped for meeting ${meetingId}`);
     return result;
@@ -664,6 +683,12 @@ ipcMain.handle('pause-recording', async (event, meetingId) => {
     if (!audioRecorder) {
       throw new Error('Audio recorder not initialized');
     }
+    
+    // Validate meeting ID
+    if (!meetingId || isNaN(meetingId)) {
+      throw new Error(`Cannot pause recording for invalid meeting ID: ${meetingId}`);
+    }
+    
     const result = await audioRecorder.pauseRecording(meetingId);
     console.log(`Recording paused for meeting ${meetingId}`);
     return result;
@@ -678,6 +703,12 @@ ipcMain.handle('resume-recording', async (event, meetingId) => {
     if (!audioRecorder) {
       throw new Error('Audio recorder not initialized');
     }
+    
+    // Validate meeting ID
+    if (!meetingId || isNaN(meetingId)) {
+      throw new Error(`Cannot resume recording for invalid meeting ID: ${meetingId}`);
+    }
+    
     const result = await audioRecorder.resumeRecording(meetingId);
     console.log(`Recording resumed for meeting ${meetingId}`);
     return result;
@@ -692,6 +723,13 @@ ipcMain.handle('get-recording-status', async (event, meetingId) => {
     if (!audioRecorder) {
       throw new Error('Audio recorder not initialized');
     }
+    
+    // Validate meeting ID
+    if (!meetingId || isNaN(meetingId)) {
+      // Return a default status for invalid meeting IDs
+      return { isRecording: false, isPaused: false };
+    }
+    
     return audioRecorder.getRecordingStatus(meetingId);
   } catch (error) {
     console.error('Error getting recording status:', error);
@@ -704,6 +742,13 @@ ipcMain.handle('get-recording-sessions', async (event, meetingId) => {
     if (!audioRecorder) {
       throw new Error('Audio recorder not initialized');
     }
+    
+    // Validate meeting ID
+    if (!meetingId || isNaN(meetingId)) {
+      // Return empty array for invalid meeting IDs
+      return [];
+    }
+    
     return await audioRecorder.getRecordingSessions(meetingId);
   } catch (error) {
     console.error('Error getting recording sessions:', error);

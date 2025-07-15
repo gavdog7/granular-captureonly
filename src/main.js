@@ -501,6 +501,13 @@ ipcMain.on('update-meeting-duration-sync', (event, meetingId) => {
     const startTime = new Date(meeting.start_time);
     const actualEndTime = new Date();
     
+    // Validate start time
+    if (isNaN(startTime.getTime())) {
+      console.warn(`Meeting ${meetingId}: Invalid start time '${meeting.start_time}' - skipping duration update`);
+      event.returnValue = { success: true, updated: false, reason: 'Invalid start time' };
+      return;
+    }
+    
     // Calculate duration and apply minimum threshold
     const durationMinutes = Math.round((actualEndTime - startTime) / (1000 * 60));
     const minimumDuration = 5;

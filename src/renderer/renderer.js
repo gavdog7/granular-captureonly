@@ -214,9 +214,16 @@ class MeetingApp {
             const statusResult = await ipcRenderer.invoke('check-google-auth-status');
             
             if (statusResult.success && statusResult.isAuthenticated) {
-                this.showSuccess('Google Drive is already connected!');
-                this.updateGoogleAuthButton(true);
-                return;
+                // If already connected, offer to disconnect and reconnect
+                const disconnect = confirm('Google Drive is already connected. Would you like to disconnect and reconnect? This may help resolve upload issues.');
+                if (disconnect) {
+                    await this.disconnectGoogleDrive();
+                    return;
+                } else {
+                    this.showSuccess('Google Drive is already connected!');
+                    this.updateGoogleAuthButton(true);
+                    return;
+                }
             }
 
             // Get OAuth URL
@@ -249,6 +256,21 @@ class MeetingApp {
             btn.classList.remove('authenticated');
             btn.classList.add('disconnected');
             btn.title = 'Connect Google Drive';
+        }
+    }
+
+    async disconnectGoogleDrive() {
+        try {
+            const result = await ipcRenderer.invoke('disconnect-google-drive');
+            if (result.success) {
+                this.updateGoogleAuthButton(false);
+                this.showSuccess('Google Drive disconnected. Click the Drive button again to reconnect.');
+            } else {
+                this.showError('Failed to disconnect Google Drive: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Error disconnecting Google Drive:', error);
+            this.showError('Failed to disconnect Google Drive: ' + error.message);
         }
     }
 

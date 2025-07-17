@@ -644,6 +644,20 @@ ipcMain.handle('check-google-auth-status', async () => {
   }
 });
 
+ipcMain.handle('disconnect-google-drive', async () => {
+  try {
+    if (googleDriveService) {
+      googleDriveService.logout();
+      console.log('Google Drive disconnected successfully');
+      return { success: true };
+    }
+    return { success: false, error: 'Google Drive service not initialized' };
+  } catch (error) {
+    console.error('Error disconnecting Google Drive:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Audio recording IPC handlers
 ipcMain.handle('start-recording', async (event, meetingId) => {
   try {

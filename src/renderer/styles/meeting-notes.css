@@ -235,9 +235,7 @@ body {
     z-index: 100;
 }
 
-.participants-collapsed:hover .participants-list {
-    display: flex;
-}
+/* Removed hover-based display - now controlled by JavaScript */
 
 .participant-email {
     background: #e0e0e0;

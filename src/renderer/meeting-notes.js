@@ -256,6 +256,17 @@ function initializeEventListeners() {
     // New inline participant functionality
     document.getElementById('addParticipantBtn').addEventListener('click', showInlineParticipantInput);
     
+    // Click to toggle participants list
+    document.getElementById('participantsPill').addEventListener('click', toggleParticipantsList);
+    
+    // Close participants list when clicking outside
+    document.addEventListener('click', (e) => {
+        const participantsSection = document.querySelector('.meeting-participants');
+        if (!participantsSection.contains(e.target)) {
+            closeParticipantsList();
+        }
+    });
+    
     // Inline participant input handling
     const inlineInput = document.getElementById('participantInlineInput');
     inlineInput.addEventListener('keypress', (e) => {
@@ -275,8 +286,8 @@ function initializeEventListeners() {
     inlineInput.addEventListener('keydown', (e) => {
         if (e.key === 'Tab') {
             e.preventDefault();
-            if (currentSuggestions.length > 0) {
-                selectSuggestion(currentSuggestions[0].email);
+            if (currentSuggestions.length > 0 && selectedSuggestionIndex >= 0) {
+                selectSuggestion(currentSuggestions[selectedSuggestionIndex].email);
             }
         } else if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -302,7 +313,11 @@ function initializeEventListeners() {
     inlineInput.addEventListener('blur', (e) => {
         // Delay hiding to allow click on suggestions
         setTimeout(() => {
-            if (!inlineInput.value.trim()) {
+            // Only hide if user clicked outside the suggestions area
+            const activeElement = document.activeElement;
+            const suggestionsContainer = document.getElementById('participantSuggestions');
+            
+            if (!inlineInput.value.trim() && !suggestionsContainer.contains(activeElement)) {
                 hideInlineParticipantInput();
             }
             hideSuggestions();
@@ -394,6 +409,11 @@ function formatMeetingTime(startTime, endTime) {
     return `${startStr} - ${endStr}`;
 }
 
+// Global state for participants dropdown
+let participantsListVisible = false;
+let isAddingParticipants = false;
+let isProcessingParticipantAdd = false;
+
 // Render participants list
 function renderParticipants(participants) {
     const participantsList = document.getElementById('participantsList');
@@ -416,6 +436,10 @@ function renderParticipants(participants) {
         participantsList.appendChild(participantEmail);
     });
     
+    // Show list if we're adding participants or if it was manually opened
+    if (isAddingParticipants || participantsListVisible) {
+        participantsList.style.display = 'flex';
+    }
 }
 
 // Add participant from inline input
@@ -456,6 +480,60 @@ async function addParticipantFromInline() {
     }
 }
 
+// Add participant from inline input but keep input active for multiple additions
+async function addParticipantFromInlineContinuous() {
+    if (isProcessingParticipantAdd) {
+        return; // Prevent rapid additions
+    }
+    
+    const input = document.getElementById('participantInlineInput');
+    const email = input.value.trim();
+    
+    if (!email || !isValidEmail(email)) {
+        return;
+    }
+    
+    isProcessingParticipantAdd = true;
+    
+    try {
+        const meeting = await ipcRenderer.invoke('get-meeting-by-id', currentMeetingId);
+        let participants = [];
+        try {
+            participants = meeting.participants ? JSON.parse(meeting.participants) : [];
+        } catch (e) {
+            console.warn('Failed to parse participants in addParticipant');
+            participants = [];
+        }
+        
+        if (participants.includes(email)) {
+            input.value = ''; // Clear input but keep it active
+            input.focus();
+            isProcessingParticipantAdd = false;
+            return;
+        }
+        
+        participants.push(email);
+        
+        setSaveStatus('saving');
+        await ipcRenderer.invoke('update-meeting-participants', currentMeetingId, participants);
+        renderParticipants(participants);
+        setSaveStatus('saved');
+        
+        // Clear input and refocus for next addition
+        input.value = '';
+        input.placeholder = 'Participant added! Enter another email...';
+        setTimeout(() => {
+            input.placeholder = 'Enter email';
+        }, 2000);
+        input.focus();
+        
+    } catch (error) {
+        console.error('Error adding participant:', error);
+    } finally {
+        isProcessingParticipantAdd = false;
+    }
+}
+
 // Remove participant
 async function removeParticipant(email) {
     try {
@@ -477,6 +555,22 @@ async function removeParticipant(email) {
         
     } catch (error) {
         console.error('Error removing participant:', error);
+    }
+}
+
+// Toggle participants list visibility
+function toggleParticipantsList() {
+    participantsListVisible = !participantsListVisible;
+    const participantsList = document.getElementById('participantsList');
+    participantsList.style.display = participantsListVisible ? 'flex' : 'none';
+}
+
+// Close participants list
+function closeParticipantsList() {
+    if (participantsListVisible && !isAddingParticipants) {
+        participantsListVisible = false;
+        const participantsList = document.getElementById('participantsList');
+        participantsList.style.display = 'none';
     }
 }
 
@@ -909,8 +1003,11 @@ function cancelEditTitle() {
 function showInlineParticipantInput() {
     const inputPill = document.getElementById('participantInputPill');
     const input = document.getElementById('participantInlineInput');
+    const participantsList = document.getElementById('participantsList');
     
+    isAddingParticipants = true;
     inputPill.style.display = 'inline-flex';
+    participantsList.style.display = 'flex'; // Show expanded list when adding
     input.value = '';
     input.focus();
     selectedSuggestionIndex = -1;
@@ -920,10 +1017,17 @@ function showInlineParticipantInput() {
 function hideInlineParticipantInput() {
     const inputPill = document.getElementById('participantInputPill');
     const input = document.getElementById('participantInlineInput');
+    const participantsList = document.getElementById('participantsList');
     
+    isAddingParticipants = false;
     inputPill.style.display = 'none';
     input.value = '';
     hideSuggestions();
+    
+    // Hide participants list if not manually opened
+    if (!participantsListVisible) {
+        participantsList.style.display = 'none';
+    }
 }
 
 // Participant suggestion functions
@@ -931,7 +1035,7 @@ async function fetchParticipantSuggestions(searchTerm) {
     try {
         const suggestions = await ipcRenderer.invoke('get-participant-suggestions', searchTerm);
         currentSuggestions = suggestions;
-        selectedSuggestionIndex = -1;
+        selectedSuggestionIndex = suggestions.length > 0 ? 0 : -1; // Auto-select first item
         displaySuggestions(suggestions, searchTerm);
     } catch (error) {
         console.error('Error fetching suggestions:', error);
@@ -1026,9 +1130,13 @@ function updateSuggestionSelection() {
 }
 
 function selectSuggestion(email) {
+    if (isProcessingParticipantAdd) {
+        return; // Prevent rapid selections
+    }
+    
     const input = document.getElementById('participantInlineInput');
     input.value = email;
-    addParticipantFromInline();
+    addParticipantFromInlineContinuous();
     hideSuggestions();
 }
 

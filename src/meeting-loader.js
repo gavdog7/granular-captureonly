@@ -233,7 +233,7 @@ class MeetingLoader {
     finalEndTime.setFullYear(meetingDate.getFullYear(), meetingDate.getMonth(), meetingDate.getDate());
 
     const participantList = this.parseParticipants(participants);
-    const folderName = this.sanitizeFolderName(title);
+    const folderName = this.sanitizeFolderName(title, meetingDate);
 
     return {
       title,
@@ -394,14 +394,25 @@ class MeetingLoader {
     return match ? match[1] : participant;
   }
 
-  sanitizeFolderName(title) {
-    return title
+  sanitizeFolderName(title, date = null) {
+    // Generate date prefix if date is provided
+    let prefix = '';
+    if (date) {
+      const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+      prefix = `${dateStr}-`;
+    }
+    
+    // Sanitize the title part
+    const titlePart = title
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .substring(0, 50);
+      .replace(/^-+|-+$/g, '');
+    
+    // Combine prefix and title, limiting total length to 70 characters
+    const combined = `${prefix}${titlePart}`;
+    return combined.substring(0, 70);
   }
 
   async refreshMeetings() {

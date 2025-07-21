@@ -101,7 +101,7 @@ class Database {
 
   async runMigrations() {
     try {
-      // Check if upload_status column exists
+      // Migration 1: Check if upload_status column exists
       const columnExists = await this.checkColumnExists('meetings', 'upload_status');
       if (!columnExists) {
         console.log('Adding upload status columns to meetings table...');
@@ -115,6 +115,10 @@ class Database {
       } else {
         console.log('Upload status columns already exist');
       }
+
+      // Migration 2: Update folder_name to include date prefix for existing meetings
+      await this.migrateFolderNamesToDatePrefix();
+
     } catch (error) {
       console.error('Migration error:', error);
       throw error;
@@ -129,6 +133,53 @@ class Database {
     } catch (error) {
       console.error('Error checking column existence:', error);
       return false;
+    }
+  }
+
+  async migrateFolderNamesToDatePrefix() {
+    try {
+      // Check if we need to run this migration by looking for folder_names without date prefixes
+      const meetingsWithoutDatePrefix = await this.all(`
+        SELECT id, title, folder_name, start_time 
+        FROM meetings 
+        WHERE folder_name NOT LIKE '____-__-__-%'
+      `);
+
+      if (meetingsWithoutDatePrefix.length === 0) {
+        console.log('Folder name date prefix migration: No meetings need updating');
+        return;
+      }
+
+      console.log(`Updating folder names with date prefix for ${meetingsWithoutDatePrefix.length} meetings...`);
+
+      for (const meeting of meetingsWithoutDatePrefix) {
+        try {
+          // Extract date from start_time (ISO format: 2025-01-15T09:00:00.000Z)
+          const startDate = new Date(meeting.start_time);
+          const dateStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+          
+          // Create new folder name with date prefix
+          const newFolderName = `${dateStr}-${meeting.folder_name}`;
+          
+          // Update the database
+          await this.run(
+            'UPDATE meetings SET folder_name = ? WHERE id = ?',
+            [newFolderName, meeting.id]
+          );
+          
+          console.log(`Updated meeting "${meeting.title}": ${meeting.folder_name} → ${newFolderName}`);
+          
+        } catch (meetingError) {
+          console.error(`Error updating meeting ${meeting.id} (${meeting.title}):`, meetingError);
+          // Continue with other meetings rather than failing the entire migration
+        }
+      }
+      
+      console.log('Folder name date prefix migration completed successfully');
+      
+    } catch (error) {
+      console.error('Error in folder name migration:', error);
+      throw error;
     }
   }
 

@@ -307,9 +307,12 @@ ipcMain.handle('refresh-meetings', async () => {
 // Add new handler for manual Excel upload
 ipcMain.handle('upload-excel-file', async (event, filePath) => {
   try {
-    // Copy the uploaded file to the expected location
-    const targetPath = path.join(__dirname, '../docs/Calendar import xlsx/Calendar management log.xlsx');
-    await fs.copy(filePath, targetPath);
+    // Copy the uploaded file to the assets folder where meeting loader expects it
+    const fileName = path.basename(filePath);
+    const targetPath = path.join(__dirname, '..', 'assets', fileName);
+    await fs.copy(filePath, targetPath, { overwrite: true });
+    
+    console.log(`📤 Uploaded Excel file: ${fileName} to assets folder`);
     
     // Refresh meetings with incremental logic
     await meetingLoader.refreshMeetingsFromExcel();

@@ -119,6 +119,36 @@ class Database {
       // Migration 2: Update folder_name to include date prefix for existing meetings
       await this.migrateFolderNamesToDatePrefix();
 
+      // Migration 3: Add markdown export tracking columns
+      const markdownExportedExists = await this.checkColumnExists('meetings', 'markdown_exported');
+      if (!markdownExportedExists) {
+        console.log('Adding markdown export tracking columns...');
+        
+        await this.run('ALTER TABLE meetings ADD COLUMN markdown_exported INTEGER DEFAULT 0');
+        await this.run('ALTER TABLE meetings ADD COLUMN last_export_attempt TEXT');
+        await this.run('ALTER TABLE meetings ADD COLUMN export_retry_count INTEGER DEFAULT 0');
+        
+        console.log('Markdown export tracking columns added successfully');
+      }
+
+      // Migration 4: Create upload queue table
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS upload_queue (
+          id INTEGER PRIMARY KEY,
+          meeting_id INTEGER NOT NULL,
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+          attempts INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now')),
+          processed_at TEXT,
+          error_message TEXT,
+          FOREIGN KEY (meeting_id) REFERENCES meetings(id),
+          UNIQUE(meeting_id)
+        )
+      `);
+
+      // Create index for upload queue
+      await this.run('CREATE INDEX IF NOT EXISTS idx_upload_queue_status ON upload_queue(status)');
+
     } catch (error) {
       console.error('Migration error:', error);
       throw error;
@@ -853,6 +883,107 @@ class Database {
       console.error('Error deleting meeting files:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  // Markdown export tracking methods
+  async updateMarkdownExportStatus(meetingId, status, error = null) {
+    try {
+      const timestamp = new Date().toISOString();
+      
+      if (status === 'success') {
+        await this.run(
+          `UPDATE meetings 
+           SET markdown_exported = 1, 
+               last_export_attempt = ?,
+               export_retry_count = 0
+           WHERE id = ?`,
+          [timestamp, meetingId]
+        );
+      } else if (status === 'failed') {
+        await this.run(
+          `UPDATE meetings 
+           SET last_export_attempt = ?,
+               export_retry_count = export_retry_count + 1
+           WHERE id = ?`,
+          [timestamp, meetingId]
+        );
+      }
+      
+      console.log(`Updated markdown export status for meeting ${meetingId}: ${status}`);
+    } catch (error) {
+      console.error('Error updating markdown export status:', error);
+      throw error;
+    }
+  }
+
+  // Upload queue methods
+  async addToUploadQueue(meetingId) {
+    try {
+      await this.run(
+        `INSERT OR REPLACE INTO upload_queue 
+         (meeting_id, status, attempts, created_at) 
+         VALUES (?, 'pending', 0, datetime('now'))`,
+        [meetingId]
+      );
+      console.log(`Meeting ${meetingId} added to upload queue`);
+    } catch (error) {
+      console.error('Error adding to upload queue:', error);
+      throw error;
+    }
+  }
+
+  async getUploadQueue(status = null) {
+    const query = status 
+      ? 'SELECT * FROM upload_queue WHERE status = ? ORDER BY created_at'
+      : 'SELECT * FROM upload_queue ORDER BY created_at';
+    const params = status ? [status] : [];
+    
+    return await this.all(query, params);
+  }
+
+  async updateUploadQueueStatus(meetingId, status, error = null) {
+    try {
+      await this.run(
+        `UPDATE upload_queue 
+         SET status = ?, 
+             processed_at = datetime('now'),
+             attempts = attempts + 1,
+             error_message = ?
+         WHERE meeting_id = ?`,
+        [status, error, meetingId]
+      );
+    } catch (error) {
+      console.error('Error updating upload queue status:', error);
+      throw error;
+    }
+  }
+
+  // Find meetings with missing markdown or failed uploads
+  async getMeetingsNeedingMarkdown() {
+    return await this.all(`
+      SELECT m.* 
+      FROM meetings m
+      WHERE m.notes_content IS NOT NULL 
+      AND m.notes_content != ''
+      AND m.notes_content != '[]'
+      AND (m.markdown_exported = 0 OR m.markdown_exported IS NULL)
+      ORDER BY m.start_time DESC
+    `);
+  }
+
+  async getMeetingsNeedingUpload() {
+    return await this.all(`
+      SELECT m.* 
+      FROM meetings m
+      JOIN recording_sessions rs ON m.id = rs.meeting_id
+      WHERE rs.completed = 1
+      AND (m.upload_status IS NULL 
+           OR m.upload_status = 'pending' 
+           OR m.upload_status = 'failed'
+           OR m.upload_status = 'no_content')
+      GROUP BY m.id
+      ORDER BY m.start_time DESC
+    `);
   }
 }
 

@@ -8,7 +8,6 @@ class UploadService {
     this.database = database;
     this.googleDriveService = googleDriveService;
     this.mainWindow = mainWindow;
-    this.uploadQueue = [];
     this.isUploading = false;
     this.maxRetries = 3;
   }
@@ -22,28 +21,19 @@ class UploadService {
     try {
       console.log(`📤 Queueing upload for meeting ${meetingId}`);
       
-      // Check if already in queue or uploading
-      const existingUpload = this.uploadQueue.find(item => item.meetingId === meetingId);
-      if (existingUpload) {
-        console.log(`Meeting ${meetingId} already in upload queue`);
-        return;
-      }
-
       // Get current upload status
       const uploadStatus = await this.database.getMeetingUploadStatus(meetingId);
-      if (uploadStatus.upload_status === 'completed') {
+      if (uploadStatus && uploadStatus.upload_status === 'completed') {
         console.log(`Meeting ${meetingId} already uploaded`);
         return;
       }
 
-      // Add to queue
-      this.uploadQueue.push({
-        meetingId,
-        retryCount: 0,
-        queuedAt: new Date().toISOString()
-      });
+      // Add to persistent database queue
+      await this.database.addToUploadQueue(meetingId);
 
-      console.log(`Meeting ${meetingId} added to upload queue. Queue length: ${this.uploadQueue.length}`);
+      // Get current queue length for logging
+      const queueItems = await this.database.getUploadQueue('pending');
+      console.log(`Meeting ${meetingId} added to upload queue. Queue length: ${queueItems.length}`);
 
       // Start processing if not already running
       if (!this.isUploading) {
@@ -57,50 +47,66 @@ class UploadService {
   }
 
   async processUploadQueue() {
-    if (this.isUploading || this.uploadQueue.length === 0) {
+    if (this.isUploading) {
+      return;
+    }
+
+    // Get pending items from database
+    const pendingUploads = await this.database.getUploadQueue('pending');
+    if (pendingUploads.length === 0) {
       return;
     }
 
     this.isUploading = true;
-    console.log(`📤 Starting upload queue processing. ${this.uploadQueue.length} items in queue`);
+    console.log(`📤 Starting upload queue processing. ${pendingUploads.length} items in queue`);
 
-    while (this.uploadQueue.length > 0) {
-      const uploadItem = this.uploadQueue.shift();
-      console.log(`📤 Processing upload for meeting ${uploadItem.meetingId}`);
+    for (const uploadItem of pendingUploads) {
+      console.log(`📤 Processing upload for meeting ${uploadItem.meeting_id}`);
 
       try {
-        await this.uploadMeeting(uploadItem.meetingId);
-        console.log(`✅ Successfully uploaded meeting ${uploadItem.meetingId}`);
+        // Update queue status to processing
+        await this.database.updateUploadQueueStatus(uploadItem.meeting_id, 'processing');
+        
+        // Upload the meeting
+        await this.uploadMeeting(uploadItem.meeting_id);
+        
+        // Mark as completed in queue
+        await this.database.updateUploadQueueStatus(uploadItem.meeting_id, 'completed');
+        console.log(`✅ Successfully uploaded meeting ${uploadItem.meeting_id}`);
         
         // Notify renderer of success
-        this.notifyUploadStatusChange(uploadItem.meetingId, 'completed');
+        this.notifyUploadStatusChange(uploadItem.meeting_id, 'completed');
         
       } catch (error) {
-        console.error(`❌ Failed to upload meeting ${uploadItem.meetingId}:`, error);
+        console.error(`❌ Failed to upload meeting ${uploadItem.meeting_id}:`, error);
         
-        uploadItem.retryCount++;
-        
-        if (uploadItem.retryCount < this.maxRetries) {
-          console.log(`🔄 Retrying upload for meeting ${uploadItem.meetingId} (attempt ${uploadItem.retryCount + 1}/${this.maxRetries})`);
+        if (uploadItem.attempts < this.maxRetries) {
+          console.log(`🔄 Will retry upload for meeting ${uploadItem.meeting_id} (attempt ${uploadItem.attempts + 1}/${this.maxRetries})`);
           
-          // Add back to queue with exponential backoff
-          setTimeout(() => {
-            this.uploadQueue.push(uploadItem);
-            if (!this.isUploading) {
-              this.processUploadQueue();
-            }
-          }, Math.pow(2, uploadItem.retryCount) * 1000); // 2s, 4s, 8s delay
+          // Mark as pending again for retry
+          await this.database.updateUploadQueueStatus(uploadItem.meeting_id, 'pending', error.message);
+          
+          // Delay before processing next item (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, uploadItem.attempts) * 1000));
           
         } else {
-          console.error(`❌ Max retries reached for meeting ${uploadItem.meetingId}. Marking as failed.`);
-          await this.database.setMeetingUploadStatus(uploadItem.meetingId, 'failed');
-          this.notifyUploadStatusChange(uploadItem.meetingId, 'failed');
+          console.error(`❌ Max retries reached for meeting ${uploadItem.meeting_id}. Marking as failed.`);
+          await this.database.updateUploadQueueStatus(uploadItem.meeting_id, 'failed', error.message);
+          await this.database.setMeetingUploadStatus(uploadItem.meeting_id, 'failed');
+          this.notifyUploadStatusChange(uploadItem.meeting_id, 'failed');
         }
       }
     }
 
     this.isUploading = false;
     console.log('📤 Upload queue processing completed');
+    
+    // Check if there are more pending items
+    const morePending = await this.database.getUploadQueue('pending');
+    if (morePending.length > 0) {
+      // Process remaining items
+      setTimeout(() => this.processUploadQueue(), 1000);
+    }
   }
 
   async uploadMeeting(meetingId) {
@@ -338,17 +344,36 @@ class UploadService {
 
   async resumePendingUploads() {
     try {
-      console.log('🔄 Checking for pending uploads...');
-      const pendingUploads = await this.database.getPendingUploads();
+      console.log('🔍 Checking for pending uploads...');
       
-      if (pendingUploads.length > 0) {
-        console.log(`📤 Found ${pendingUploads.length} pending uploads, adding to queue`);
-        for (const meeting of pendingUploads) {
+      // First, check upload queue for interrupted uploads
+      const interruptedUploads = await this.database.getUploadQueue('processing');
+      if (interruptedUploads.length > 0) {
+        console.log(`🔄 Found ${interruptedUploads.length} interrupted uploads, resetting to pending`);
+        for (const upload of interruptedUploads) {
+          await this.database.updateUploadQueueStatus(upload.meeting_id, 'pending');
+        }
+      }
+
+      // Get all meetings that need uploading
+      const meetingsNeedingUpload = await this.database.getMeetingsNeedingUpload();
+      
+      if (meetingsNeedingUpload.length > 0) {
+        console.log(`📤 Found ${meetingsNeedingUpload.length} meetings needing upload`);
+        for (const meeting of meetingsNeedingUpload) {
           await this.queueMeetingUpload(meeting.id);
         }
-      } else {
-        console.log('✅ No pending uploads found');
       }
+
+      // Get all meetings that need markdown regeneration
+      const meetingsNeedingMarkdown = await this.database.getMeetingsNeedingMarkdown();
+      
+      if (meetingsNeedingMarkdown.length > 0) {
+        console.log(`📝 Found ${meetingsNeedingMarkdown.length} meetings needing markdown generation`);
+        // These will be handled by the background health checker
+      }
+
+      console.log('✅ Startup recovery complete');
     } catch (error) {
       console.error('Error resuming pending uploads:', error);
     }
@@ -369,16 +394,25 @@ class UploadService {
     }
   }
 
-  getQueueStatus() {
+  async getQueueStatus() {
+    const pendingUploads = await this.database.getUploadQueue('pending');
+    const processingUploads = await this.database.getUploadQueue('processing');
+    
     return {
-      queueLength: this.uploadQueue.length,
+      queueLength: pendingUploads.length,
       isUploading: this.isUploading,
-      queue: this.uploadQueue.map(item => ({
-        meetingId: item.meetingId,
-        retryCount: item.retryCount,
-        queuedAt: item.queuedAt
+      queue: [...processingUploads, ...pendingUploads].map(item => ({
+        meetingId: item.meeting_id,
+        status: item.status,
+        attempts: item.attempts,
+        queuedAt: item.created_at
       }))
     };
+  }
+
+  getQueueLength() {
+    // Synchronous method for backward compatibility
+    return this.database.getUploadQueue('pending').then(items => items.length).catch(() => 0);
   }
 }
 

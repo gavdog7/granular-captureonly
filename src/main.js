@@ -8,6 +8,7 @@ const MeetingLoader = require('./meeting-loader');
 const AudioRecorder = require('./audio-recorder');
 const UploadService = require('./upload-service');
 const GoogleDriveService = require('./google-drive');
+const { MeetingHealthChecker } = require('./meeting-health-checker');
 const Store = require('electron-store');
 const { setupTestDate, disableTestDate, dateOverride } = require('./date-override');
 
@@ -17,6 +18,7 @@ let meetingLoader;
 let audioRecorder;
 let uploadService;
 let googleDriveService;
+let healthChecker;
 let store;
 
 function createWindow() {
@@ -219,6 +221,11 @@ async function initializeApp() {
     await uploadService.initialize();
     console.log('Upload service initialized');
     
+    // Initialize health checker
+    healthChecker = new MeetingHealthChecker(database, uploadService);
+    healthChecker.start();
+    console.log('Meeting health checker initialized');
+    
     // Always load today's meetings from the calendar management log
     await meetingLoader.loadTodaysMeetings();
 
@@ -247,6 +254,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  if (healthChecker) {
+    healthChecker.stop();
+  }
   if (audioRecorder) {
     await audioRecorder.cleanup();
   }
@@ -439,6 +449,53 @@ ipcMain.handle('export-meeting-notes-markdown', async (event, meetingId) => {
     return await database.exportMeetingNotesAsMarkdown(meetingId);
   } catch (error) {
     console.error('Error exporting meeting notes as markdown:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Enhanced markdown export handlers for the new export manager
+ipcMain.handle('export-meeting-notes', async (event, { meetingId, folderName }) => {
+  try {
+    const result = await database.exportMeetingNotesAsMarkdown(meetingId);
+    if (result.success) {
+      await database.updateMarkdownExportStatus(meetingId, 'success');
+    }
+    return result;
+  } catch (error) {
+    console.error('Error exporting meeting notes:', error);
+    await database.updateMarkdownExportStatus(meetingId, 'failed', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+// Synchronous export for page unload
+ipcMain.on('export-meeting-notes-sync', (event, { meetingId, folderName }) => {
+  try {
+    database.exportMeetingNotesAsMarkdown(meetingId)
+      .then(result => {
+        if (result.success) {
+          database.updateMarkdownExportStatus(meetingId, 'success');
+        }
+        event.returnValue = result;
+      })
+      .catch(error => {
+        console.error('Error in sync export:', error);
+        database.updateMarkdownExportStatus(meetingId, 'failed', error.message);
+        event.returnValue = { success: false, error: error.message };
+      });
+  } catch (error) {
+    console.error('Error in sync export handler:', error);
+    event.returnValue = { success: false, error: error.message };
+  }
+});
+
+// Update markdown export status
+ipcMain.handle('update-markdown-export-status', async (event, { meetingId, status, error, timestamp }) => {
+  try {
+    await database.updateMarkdownExportStatus(meetingId, status, error);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating markdown export status:', error);
     return { success: false, error: error.message };
   }
 });

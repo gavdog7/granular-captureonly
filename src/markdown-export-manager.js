@@ -1,6 +1,8 @@
-const { ipcRenderer } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
+
+// Use a different variable name to avoid conflicts
+let exportIpcRenderer;
 
 class MarkdownExportManager {
   constructor() {
@@ -8,6 +10,13 @@ class MarkdownExportManager {
     this.exportInterval = null;
     this.lastExportTime = new Map();
     this.exportDebounceDelay = 3000; // 3 seconds debounce
+    
+    // Initialize ipcRenderer reference
+    try {
+      exportIpcRenderer = require('electron').ipcRenderer;
+    } catch (e) {
+      console.error('Failed to initialize ipcRenderer in MarkdownExportManager:', e);
+    }
   }
 
   initialize(meetingId) {
@@ -159,7 +168,7 @@ class MarkdownExportManager {
 
   exportMarkdownSync(meeting) {
     // Synchronous IPC call for page unload
-    const result = ipcRenderer.sendSync('export-meeting-notes-sync', {
+    const result = exportIpcRenderer.sendSync('export-meeting-notes-sync', {
       meetingId: meeting.id,
       folderName: meeting.folder_name
     });
@@ -171,7 +180,7 @@ class MarkdownExportManager {
 
   async exportMarkdownAsync(meeting) {
     // Async IPC call for normal exports
-    const result = await ipcRenderer.invoke('export-meeting-notes', {
+    const result = await exportIpcRenderer.invoke('export-meeting-notes', {
       meetingId: meeting.id,
       folderName: meeting.folder_name
     });
@@ -183,7 +192,7 @@ class MarkdownExportManager {
 
   async updateExportStatus(meetingId, status, error = null) {
     try {
-      await ipcRenderer.invoke('update-markdown-export-status', {
+      await exportIpcRenderer.invoke('update-markdown-export-status', {
         meetingId,
         status,
         error,

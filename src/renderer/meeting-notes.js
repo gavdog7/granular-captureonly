@@ -16,13 +16,15 @@ let suggestionTimeout;
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('Meeting notes page loading...');
+    console.log('🚀 Meeting notes page loading...');
+    console.log('📍 Current URL:', window.location.href);
     
     // Get meeting ID from URL params
     const urlParams = new URLSearchParams(window.location.search);
     currentMeetingId = urlParams.get('meetingId');
     
-    console.log('Meeting ID from URL:', currentMeetingId);
+    console.log('🆔 Meeting ID from URL:', currentMeetingId);
+    console.log('🔗 URL search params:', window.location.search);
     
     if (!currentMeetingId) {
         console.error('No meeting ID provided');
@@ -30,17 +32,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     
-    console.log('Initializing components...');
+    console.log('🔧 Initializing components...');
     
     // Initialize components
-    initializeQuillEditor();
-    console.log('Quill editor initialized');
+    try {
+        initializeQuillEditor();
+        console.log('✅ Quill editor initialized');
+    } catch (error) {
+        console.error('❌ Failed to initialize Quill editor:', error);
+        return;
+    }
     
-    initializeEventListeners();
-    console.log('Event listeners initialized');
+    try {
+        initializeEventListeners();
+        console.log('✅ Event listeners initialized');
+    } catch (error) {
+        console.error('❌ Failed to initialize event listeners:', error);
+        return;
+    }
     
-    await loadMeetingData();
-    console.log('Meeting data loaded');
+    try {
+        await loadMeetingData();
+        console.log('✅ Meeting data loaded');
+    } catch (error) {
+        console.error('❌ Failed to load meeting data:', error);
+        hideLoadingOverlay();
+        return;
+    }
     
     // Initialize recording functionality
     await initializeRecording();
@@ -334,10 +352,12 @@ function initializeEventListeners() {
 // Load meeting data from database
 async function loadMeetingData() {
     try {
+        console.log('📊 Loading meeting data for ID:', currentMeetingId);
         const meeting = await ipcRenderer.invoke('get-meeting-by-id', currentMeetingId);
+        console.log('📊 Meeting data received:', meeting);
         
         if (!meeting) {
-            console.error('Meeting not found');
+            console.error('❌ Meeting not found for ID:', currentMeetingId);
             window.location.href = 'index.html';
             return;
         }
@@ -397,10 +417,14 @@ async function loadMeetingData() {
         isLoading = false;
         console.log('isLoading set to false - auto-save now enabled');
         
+        // Hide the loading overlay
+        hideLoadingOverlay();
+        
     } catch (error) {
         console.error('Error loading meeting data:', error);
         setSaveStatus('error');
         isLoading = false; // Also set to false on error
+        hideLoadingOverlay(); // Hide loading overlay on error too
     }
 }
 

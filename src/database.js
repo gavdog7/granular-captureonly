@@ -191,6 +191,17 @@ class Database {
           // Create new folder name with date prefix
           const newFolderName = `${dateStr}-${meeting.folder_name}`;
           
+          // Check if this new folder name already exists
+          const existingMeeting = await this.get(
+            'SELECT id FROM meetings WHERE folder_name = ? AND id != ?',
+            [newFolderName, meeting.id]
+          );
+          
+          if (existingMeeting) {
+            console.log(`Skipping meeting ${meeting.id} - folder name ${newFolderName} already exists`);
+            continue;
+          }
+          
           // Update the database
           await this.run(
             'UPDATE meetings SET folder_name = ? WHERE id = ?',

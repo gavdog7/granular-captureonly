@@ -3,7 +3,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const sqlite3 = require('sqlite3').verbose();
-const { convertDeltaToMarkdown } = require('../src/quill-to-markdown');
+const { generateMarkdownDocument } = require('../src/quill-to-markdown');
 
 class StandaloneBacklogFixer {
   constructor() {
@@ -104,7 +104,7 @@ class StandaloneBacklogFixer {
       }
 
       // Convert to markdown
-      const markdownContent = convertDeltaToMarkdown(notesContent);
+      const markdownContent = generateMarkdownDocument(notesContent);
       
       // Write markdown file
       await fs.writeFile(markdownPath, markdownContent);

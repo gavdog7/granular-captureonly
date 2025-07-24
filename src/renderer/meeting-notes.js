@@ -46,11 +46,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     await initializeRecording();
     console.log('Recording initialized');
     
-    // Initialize markdown export manager
-    if (window.markdownExportManager) {
-        window.markdownExportManager.initialize(currentMeetingId);
-        console.log('Markdown export manager initialized');
-    }
+    // Initialize markdown export manager (temporarily disabled to fix loading issue)
+    // if (window.markdownExportManager) {
+    //     window.markdownExportManager.initialize(currentMeetingId);
+    //     console.log('Markdown export manager initialized');
+    // }
     
     // Hide loading overlay
     hideLoadingOverlay();
@@ -1307,10 +1307,10 @@ async function handleNavigationBack() {
             ipcRenderer.invoke('log-to-main', `❌ MARKDOWN EXPORT: Failed - ${exportResult.error}`);
         }
         
-        // Clean up export manager before navigation
-        if (window.markdownExportManager) {
-            window.markdownExportManager.cleanup();
-        }
+        // Clean up export manager before navigation (temporarily disabled)
+        // if (window.markdownExportManager) {
+        //     window.markdownExportManager.cleanup();
+        // }
         
         // Small delay for logs (can be removed later)
         await new Promise(resolve => setTimeout(resolve, 500));

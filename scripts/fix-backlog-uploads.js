@@ -2,9 +2,9 @@
 
 const path = require('path');
 const fs = require('fs-extra');
-const { Database } = require('../src/database');
+const Database = require('../src/database');
 const { convertDeltaToMarkdown } = require('../src/quill-to-markdown');
-const { UploadService } = require('../src/upload-service');
+const UploadService = require('../src/upload-service');
 const { connectToGoogleDrive } = require('../src/google-drive');
 
 class BacklogUploadFixer {

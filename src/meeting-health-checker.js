@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
-const { convertDeltaToMarkdown } = require('./quill-to-markdown');
+const { generateMarkdownDocument } = require('./quill-to-markdown');
 
 class MeetingHealthChecker {
   constructor(database, uploadService) {
@@ -100,7 +100,7 @@ class MeetingHealthChecker {
       }
 
       // Convert to markdown
-      const markdownContent = convertDeltaToMarkdown(notesContent);
+      const markdownContent = generateMarkdownDocument(notesContent);
       
       // Determine file path
       const dateStr = meeting.start_time.split('T')[0];

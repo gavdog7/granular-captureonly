@@ -221,10 +221,10 @@ async function initializeApp() {
     await uploadService.initialize();
     console.log('Upload service initialized');
     
-    // Initialize health checker
-    healthChecker = new MeetingHealthChecker(database, uploadService);
-    healthChecker.start();
-    console.log('Meeting health checker initialized');
+    // Initialize health checker (temporarily disabled to fix issues)
+    // healthChecker = new MeetingHealthChecker(database, uploadService);
+    // healthChecker.start();
+    console.log('Meeting health checker temporarily disabled');
     
     // Always load today's meetings from the calendar management log
     await meetingLoader.loadTodaysMeetings();

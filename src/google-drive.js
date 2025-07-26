@@ -3,8 +3,9 @@ const path = require('path');
 const fs = require('fs-extra');
 
 class GoogleDriveService {
-  constructor(store) {
+  constructor(store, mainWindow) {
     this.store = store;
+    this.mainWindow = mainWindow;
     this.oauth2Client = null;
     this.drive = null;
   }
@@ -75,31 +76,58 @@ class GoogleDriveService {
     return this.oauth2Client && this.oauth2Client.credentials.access_token;
   }
 
+  async handleAuthError(error) {
+    // Check if error is due to expired/revoked token
+    if (error.message && (error.message.includes('invalid_grant') || 
+        error.message.includes('Token has been expired or revoked'))) {
+      console.error('🔐 Google OAuth token expired or revoked');
+      
+      // Clear stored tokens
+      this.store.delete('googleTokens');
+      this.drive = null;
+      
+      // Notify the UI
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('google-auth-expired');
+      }
+      
+      // Return a specific error that upload service can handle
+      throw new Error('AUTH_EXPIRED');
+    }
+    
+    // Re-throw other errors
+    throw error;
+  }
+
   // DEPRECATED: Use upload-service.js folder structure instead
   // This method created conflicting folder structures
 
   async findOrCreateFolder(name, parentId) {
-    const query = `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents`;
-    
-    const response = await this.drive.files.list({
-      q: query,
-      fields: 'files(id, name)'
-    });
+    try {
+      const query = `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents`;
+      
+      const response = await this.drive.files.list({
+        q: query,
+        fields: 'files(id, name)'
+      });
 
-    if (response.data.files.length > 0) {
-      return response.data.files[0].id;
+      if (response.data.files.length > 0) {
+        return response.data.files[0].id;
+      }
+
+      const folderResponse = await this.drive.files.create({
+        requestBody: {
+          name,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [parentId]
+        },
+        fields: 'id'
+      });
+
+      return folderResponse.data.id;
+    } catch (error) {
+      return this.handleAuthError(error);
     }
-
-    const folderResponse = await this.drive.files.create({
-      requestBody: {
-        name,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: [parentId]
-      },
-      fields: 'id'
-    });
-
-    return folderResponse.data.id;
   }
 
   async uploadFile(filePath, fileName, parentFolderId) {

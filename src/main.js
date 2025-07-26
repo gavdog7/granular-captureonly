@@ -205,7 +205,7 @@ async function initializeApp() {
     });
 
     // Initialize Google Drive service first
-    googleDriveService = new GoogleDriveService(store);
+    googleDriveService = new GoogleDriveService(store, mainWindow);
     try {
       await googleDriveService.initializeOAuth();
       console.log('Google Drive service initialized');

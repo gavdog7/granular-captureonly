@@ -125,12 +125,20 @@ class UploadService {
 
       console.log(`📋 Meeting details: ${meeting.title} (${meeting.folder_name})`);
 
+      // Enhanced content detection before gathering files
+      const hasContent = await this.hasContentToUpload(meetingId, meeting);
+      if (!hasContent) {
+        console.log(`📝 Smart detection: No content to upload for meeting ${meetingId}`);
+        await this.database.setMeetingUploadStatus(meetingId, 'no_content');
+        return;
+      }
+
       // Gather files to upload
       const filesToUpload = await this.gatherMeetingFiles(meetingId, meeting);
       console.log(`📁 Found ${filesToUpload.length} files to upload:`, filesToUpload.map(f => f.name));
 
       if (filesToUpload.length === 0) {
-        console.log(`📝 No content to upload for meeting ${meetingId} - skipping`);
+        console.log(`📝 No files found despite content detection - marking as no_content`);
         await this.database.setMeetingUploadStatus(meetingId, 'no_content');
         return;
       }
@@ -162,6 +170,18 @@ class UploadService {
 
     } catch (error) {
       console.error(`💥 Upload failed for meeting ${meetingId}:`, error);
+      
+      // Handle auth expiration separately
+      if (error.message === 'AUTH_EXPIRED') {
+        console.log(`🔐 Auth expired for meeting ${meetingId} - not marking as failed`);
+        // Don't mark as failed - leave as pending for retry after re-auth
+        // Notify the UI about auth expiration
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('upload-auth-required', { meetingId });
+        }
+        return;
+      }
+      
       await this.database.setMeetingUploadStatus(meetingId, 'failed');
       throw error;
     }
@@ -413,6 +433,53 @@ class UploadService {
   getQueueLength() {
     // Synchronous method for backward compatibility
     return this.database.getUploadQueue('pending').then(items => items.length).catch(() => 0);
+  }
+
+  async hasContentToUpload(meetingId, meeting) {
+    try {
+      // Check 1: Database notes content
+      if (meeting.notes_content && meeting.notes_content.trim() !== '' && meeting.notes_content !== '{}') {
+        console.log(`✅ Content check: Meeting ${meetingId} has notes in database`);
+        return true;
+      }
+
+      // Check 2: Recording sessions
+      const recordings = await this.database.getMeetingRecordings(meetingId);
+      if (recordings && recordings.length > 0) {
+        const completedRecordings = recordings.filter(r => r.completed);
+        if (completedRecordings.length > 0) {
+          console.log(`✅ Content check: Meeting ${meetingId} has ${completedRecordings.length} completed recordings`);
+          return true;
+        }
+      }
+
+      // Check 3: Local files (markdown, audio)
+      const dateStr = meeting.start_time.split('T')[0];
+      const projectRoot = path.dirname(__dirname);
+      const meetingDir = path.join(projectRoot, 'assets', dateStr, meeting.folder_name);
+
+      if (await fs.pathExists(meetingDir)) {
+        const files = await fs.readdir(meetingDir);
+        const contentFiles = files.filter(file => 
+          file.endsWith('.md') || 
+          file.endsWith('.opus') || 
+          file.endsWith('.wav') || 
+          file.endsWith('.m4a')
+        );
+        
+        if (contentFiles.length > 0) {
+          console.log(`✅ Content check: Meeting ${meetingId} has ${contentFiles.length} local files: ${contentFiles}`);
+          return true;
+        }
+      }
+
+      console.log(`❌ Content check: Meeting ${meetingId} has no uploadable content`);
+      return false;
+    } catch (error) {
+      console.error(`Error checking content for meeting ${meetingId}:`, error);
+      // Default to true on error to avoid false negatives
+      return true;
+    }
   }
 }
 

@@ -191,63 +191,84 @@ class UploadService {
     const files = [];
     const dateStr = meeting.start_time.split('T')[0];
     const projectRoot = path.dirname(__dirname);
-    const meetingDir = path.join(projectRoot, 'assets', dateStr, meeting.folder_name);
-
+    
     try {
-      // 1. Markdown file
-      const markdownFile = path.join(meetingDir, `${meeting.folder_name}-notes.md`);
-      if (await fs.pathExists(markdownFile)) {
-        const stats = await fs.stat(markdownFile);
-        files.push({
-          name: 'notes.md',
-          path: markdownFile,
-          size: stats.size,
-          type: 'markdown'
-        });
-        console.log(`📝 Found markdown file: ${markdownFile}`);
-      } else {
-        console.warn(`⚠️ Markdown file not found: ${markdownFile}`);
-      }
-
-      // 2. Audio recordings
-      const recordings = await this.database.getMeetingRecordings(meetingId);
-      console.log(`🔍 Database query returned ${recordings.length} recordings for meeting ${meetingId}`);
-      for (const recording of recordings) {
-        if (recording.final_path && await fs.pathExists(recording.final_path)) {
-          const stats = await fs.stat(recording.final_path);
-          const fileName = path.basename(recording.final_path);
-          files.push({
-            name: fileName,
-            path: recording.final_path,
-            size: stats.size,
-            type: 'audio',
-            duration: recording.duration
-          });
-          console.log(`🎵 Found audio file: ${recording.final_path} (${recording.duration}s)`);
-        } else {
-          // Audio file not found at recorded path
-          // This can happen if meeting folder was renamed after recording
-          console.warn(`⚠️ Audio file not found at recorded path: ${recording.final_path}`);
+      // Find all possible directories for this meeting
+      const possibleDirs = await this.findMeetingDirectories(meeting, dateStr, projectRoot);
+      
+      let foundContentDir = null;
+      
+      // Check each possible directory for content
+      for (const meetingDir of possibleDirs) {
+        if (await fs.pathExists(meetingDir)) {
+          const dirFiles = await fs.readdir(meetingDir);
+          const contentFiles = dirFiles.filter(file => 
+            file.endsWith('.md') || 
+            file.endsWith('.opus') || 
+            file.endsWith('.wav') || 
+            file.endsWith('.m4a') ||
+            file.endsWith('.mp3')
+          );
           
-          // Try to find the file in the current meeting folder
-          const fileName = path.basename(recording.final_path);
-          const alternativePath = path.join(meetingDir, fileName);
-          
-          if (await fs.pathExists(alternativePath)) {
-            const stats = await fs.stat(alternativePath);
-            files.push({
-              name: fileName,
-              path: alternativePath,
-              size: stats.size,
-              type: 'audio',
-              duration: recording.duration
-            });
-            console.log(`🎵 Found audio file in meeting folder: ${alternativePath} (${recording.duration}s)`);
-          } else {
-            console.error(`❌ Audio file not found in either location`);
+          if (contentFiles.length > 0) {
+            foundContentDir = meetingDir;
+            console.log(`📂 Found content directory: ${meetingDir} (${dirFiles.length} files)`);
+            break;
           }
         }
       }
+      
+      if (!foundContentDir) {
+        console.log(`📁 No content directory found for meeting ${meetingId}`);
+        return files;
+      }
+      
+      // Get ALL files in the content directory
+      const dirFiles = await fs.readdir(foundContentDir);
+      
+      // 1. Add markdown files
+      const markdownFiles = dirFiles.filter(f => f.endsWith('.md'));
+      for (const mdFile of markdownFiles) {
+        const filePath = path.join(foundContentDir, mdFile);
+        const stats = await fs.stat(filePath);
+        files.push({
+          name: mdFile,
+          path: filePath,
+          size: stats.size,
+          type: 'markdown'
+        });
+        console.log(`📝 Found markdown: ${mdFile}`);
+      }
+      
+      // 2. Add audio files (.opus, .m4a, .wav)
+      const audioExtensions = ['.opus', '.m4a', '.wav', '.mp3'];
+      const audioFiles = dirFiles.filter(f => 
+        audioExtensions.some(ext => f.endsWith(ext))
+      );
+      
+      // Get duration info from database if available
+      const recordings = await this.database.getMeetingRecordings(meetingId);
+      
+      for (const audioFile of audioFiles) {
+        const filePath = path.join(foundContentDir, audioFile);
+        const stats = await fs.stat(filePath);
+        
+        // Try to find duration from database
+        const recording = recordings.find(r => 
+          path.basename(r.final_path || '') === audioFile
+        );
+        
+        files.push({
+          name: audioFile,
+          path: filePath,
+          size: stats.size,
+          type: 'audio',
+          duration: recording?.duration || null
+        });
+        console.log(`🎵 Found audio: ${audioFile} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+      }
+
+      console.log(`📊 Total files found for meeting ${meetingId}: ${files.length}`);
 
     } catch (error) {
       console.error('Error gathering meeting files:', error);
@@ -437,49 +458,79 @@ class UploadService {
 
   async hasContentToUpload(meetingId, meeting) {
     try {
-      // Check 1: Database notes content
-      if (meeting.notes_content && meeting.notes_content.trim() !== '' && meeting.notes_content !== '{}') {
-        console.log(`✅ Content check: Meeting ${meetingId} has notes in database`);
+      const dateStr = meeting.start_time.split('T')[0];
+      const projectRoot = path.dirname(__dirname);
+      
+      // Try multiple directory strategies to find content
+      const possibleDirs = await this.findMeetingDirectories(meeting, dateStr, projectRoot);
+      
+      // Check all possible directories for content
+      for (const meetingDir of possibleDirs) {
+        if (await fs.pathExists(meetingDir)) {
+          const files = await fs.readdir(meetingDir);
+          const contentFiles = files.filter(file => 
+            file.endsWith('.md') || 
+            file.endsWith('.opus') || 
+            file.endsWith('.wav') || 
+            file.endsWith('.m4a') ||
+            file.endsWith('.mp3')
+          );
+          
+          if (contentFiles.length > 0) {
+            console.log(`✅ Meeting ${meetingId} has ${contentFiles.length} content files in ${meetingDir}`);
+            return true;
+          }
+        }
+      }
+
+      // Check database notes (in case markdown not exported yet)
+      if (meeting.notes_content && 
+          meeting.notes_content.trim() !== '' && 
+          meeting.notes_content !== '{}' &&
+          meeting.notes_content !== '[]') {
+        console.log(`✅ Meeting ${meetingId} has notes in database`);
         return true;
       }
 
-      // Check 2: Recording sessions
-      const recordings = await this.database.getMeetingRecordings(meetingId);
-      if (recordings && recordings.length > 0) {
-        const completedRecordings = recordings.filter(r => r.completed);
-        if (completedRecordings.length > 0) {
-          console.log(`✅ Content check: Meeting ${meetingId} has ${completedRecordings.length} completed recordings`);
-          return true;
-        }
-      }
-
-      // Check 3: Local files (markdown, audio)
-      const dateStr = meeting.start_time.split('T')[0];
-      const projectRoot = path.dirname(__dirname);
-      const meetingDir = path.join(projectRoot, 'assets', dateStr, meeting.folder_name);
-
-      if (await fs.pathExists(meetingDir)) {
-        const files = await fs.readdir(meetingDir);
-        const contentFiles = files.filter(file => 
-          file.endsWith('.md') || 
-          file.endsWith('.opus') || 
-          file.endsWith('.wav') || 
-          file.endsWith('.m4a')
-        );
-        
-        if (contentFiles.length > 0) {
-          console.log(`✅ Content check: Meeting ${meetingId} has ${contentFiles.length} local files: ${contentFiles}`);
-          return true;
-        }
-      }
-
-      console.log(`❌ Content check: Meeting ${meetingId} has no uploadable content`);
+      console.log(`❌ Meeting ${meetingId} has no uploadable content`);
       return false;
     } catch (error) {
       console.error(`Error checking content for meeting ${meetingId}:`, error);
       // Default to true on error to avoid false negatives
       return true;
     }
+  }
+
+  async findMeetingDirectories(meeting, dateStr, projectRoot) {
+    const basePath = path.join(projectRoot, 'assets', dateStr);
+    const possibleDirs = [];
+    
+    // Strategy 1: Use database folder_name
+    possibleDirs.push(path.join(basePath, meeting.folder_name));
+    
+    // Strategy 2: Look for directories that might match this meeting
+    try {
+      if (await fs.pathExists(basePath)) {
+        const allDirs = await fs.readdir(basePath);
+        const meetingDirs = allDirs.filter(dir => {
+          // Look for directories that contain meeting title words
+          const titleWords = meeting.title.toLowerCase().split(/\s+/).filter(word => word.length > 3);
+          const dirName = dir.toLowerCase();
+          
+          // Check if directory name contains any significant words from the title
+          return titleWords.some(word => dirName.includes(word));
+        });
+        
+        // Add these potential matches
+        meetingDirs.forEach(dir => {
+          possibleDirs.push(path.join(basePath, dir));
+        });
+      }
+    } catch (error) {
+      console.warn(`Could not scan directory ${basePath}:`, error.message);
+    }
+    
+    return possibleDirs;
   }
 }
 

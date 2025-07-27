@@ -99,8 +99,8 @@ class MeetingHealthChecker {
         return false;
       }
 
-      // Convert to markdown
-      const markdownContent = generateMarkdownDocument(notesContent);
+      // Convert to markdown (needs full meeting object, not just notes)
+      const markdownContent = generateMarkdownDocument(meeting);
       
       // Determine file path
       const dateStr = meeting.start_time.split('T')[0];
@@ -118,13 +118,9 @@ class MeetingHealthChecker {
       
       console.log(`✅ Regenerated markdown for meeting ${meeting.id}`);
       
-      // Queue for upload if it has recordings
-      const recordings = await this.database.getMeetingRecordings(meeting.id);
-      const hasCompletedRecordings = recordings.some(r => r.completed === 1);
-      
-      if (hasCompletedRecordings) {
-        await this.uploadService.queueMeetingUpload(meeting.id);
-      }
+      // Queue for upload (markdown was just generated, so there's content to upload)
+      await this.uploadService.queueMeetingUpload(meeting.id);
+      console.log(`📤 Queued meeting ${meeting.id} for upload after markdown generation`);
       
       return true;
     } catch (error) {

@@ -76,6 +76,18 @@ class MeetingHealthChecker {
       
       for (const meeting of meetingsNeedingMarkdown) {
         try {
+          // Check if meeting has active recording
+          const activeRecording = await this.database.get(`
+            SELECT COUNT(*) as count 
+            FROM recording_sessions 
+            WHERE meeting_id = ? AND completed = 0
+          `, meeting.id);
+          
+          if (activeRecording && activeRecording.count > 0) {
+            console.log(`⏸️  Skipping meeting ${meeting.id} (${meeting.folder_name}) - recording in progress`);
+            continue;
+          }
+          
           await this.regenerateMarkdown(meeting);
         } catch (error) {
           console.error(`❌ Failed to regenerate markdown for meeting ${meeting.id}:`, error);
@@ -151,6 +163,18 @@ class MeetingHealthChecker {
       console.log(`🔄 Found ${failedUploads.length} failed uploads to retry`);
       
       for (const meeting of failedUploads) {
+        // Check if meeting has active recording
+        const activeRecording = await this.database.get(`
+          SELECT COUNT(*) as count 
+          FROM recording_sessions 
+          WHERE meeting_id = ? AND completed = 0
+        `, meeting.id);
+        
+        if (activeRecording && activeRecording.count > 0) {
+          console.log(`⏸️  Skipping meeting ${meeting.id} (${meeting.folder_name}) - recording in progress`);
+          continue;
+        }
+        
         console.log(`🔄 Retrying upload for meeting ${meeting.id} (${meeting.folder_name})`);
         await this.uploadService.queueMeetingUpload(meeting.id);
       }
@@ -206,6 +230,18 @@ class MeetingHealthChecker {
       console.log(`🔧 Found ${stuckUploads.length} stuck uploads, resetting to pending`);
       
       for (const meeting of stuckUploads) {
+        // Check if meeting has active recording
+        const activeRecording = await this.database.get(`
+          SELECT COUNT(*) as count 
+          FROM recording_sessions 
+          WHERE meeting_id = ? AND completed = 0
+        `, meeting.id);
+        
+        if (activeRecording && activeRecording.count > 0) {
+          console.log(`⏸️  Skipping meeting ${meeting.id} (${meeting.folder_name}) - recording in progress`);
+          continue;
+        }
+        
         console.log(`🔧 Resetting upload status for meeting ${meeting.id} (${meeting.folder_name})`);
         await this.database.setMeetingUploadStatus(meeting.id, 'pending');
         await this.uploadService.queueMeetingUpload(meeting.id);

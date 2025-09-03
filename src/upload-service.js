@@ -336,6 +336,21 @@ class UploadService {
 
     } catch (error) {
       console.error(`Error finding/creating folder ${folderName}:`, error);
+      
+      // Check if error is due to expired/revoked token
+      if (error.message && (error.message.includes('invalid_grant') || 
+          error.message.includes('Token has been expired or revoked'))) {
+        console.error('🔐 Google OAuth token expired or revoked');
+        
+        // Notify the UI about auth expiration
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('google-auth-expired');
+        }
+        
+        // Throw AUTH_EXPIRED error to be handled by uploadMeeting
+        throw new Error('AUTH_EXPIRED');
+      }
+      
       throw error;
     }
   }
@@ -379,6 +394,21 @@ class UploadService {
 
     } catch (error) {
       console.error(`Error uploading file ${file.name}:`, error);
+      
+      // Check if error is due to expired/revoked token
+      if (error.message && (error.message.includes('invalid_grant') || 
+          error.message.includes('Token has been expired or revoked'))) {
+        console.error('🔐 Google OAuth token expired or revoked');
+        
+        // Notify the UI about auth expiration
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('google-auth-expired');
+        }
+        
+        // Throw AUTH_EXPIRED error to be handled by uploadMeeting
+        throw new Error('AUTH_EXPIRED');
+      }
+      
       throw error;
     }
   }

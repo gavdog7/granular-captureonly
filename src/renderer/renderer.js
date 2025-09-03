@@ -41,6 +41,17 @@ class MeetingApp {
         ipcRenderer.on('upload-status-changed', (event, data) => {
             this.handleUploadStatusChange(data);
         });
+
+        // Listen for auth expiration events
+        ipcRenderer.on('google-auth-expired', () => {
+            console.log('Google auth expired - updating button state');
+            this.updateGoogleAuthButton(false, true);
+        });
+
+        ipcRenderer.on('upload-auth-required', () => {
+            console.log('Upload auth required - updating button state');
+            this.updateGoogleAuthButton(false, true);
+        });
     }
 
     async loadMeetings() {
@@ -246,14 +257,18 @@ class MeetingApp {
         }
     }
 
-    updateGoogleAuthButton(isAuthenticated) {
+    updateGoogleAuthButton(isAuthenticated, authFailed = false) {
         const btn = document.getElementById('google-auth-btn');
         if (isAuthenticated) {
             btn.classList.add('authenticated');
-            btn.classList.remove('disconnected');
+            btn.classList.remove('disconnected', 'auth-failed');
             btn.title = 'Google Drive connected';
-        } else {
+        } else if (authFailed) {
             btn.classList.remove('authenticated');
+            btn.classList.add('disconnected', 'auth-failed');
+            btn.title = 'Authentication expired - click to reconnect';
+        } else {
+            btn.classList.remove('authenticated', 'auth-failed');
             btn.classList.add('disconnected');
             btn.title = 'Connect Google Drive';
         }

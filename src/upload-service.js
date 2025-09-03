@@ -80,6 +80,14 @@ class UploadService {
       } catch (error) {
         console.error(`❌ Failed to upload meeting ${uploadItem.meeting_id}:`, error);
         
+        // Handle authentication failures specially - don't count against retry attempts
+        if (error.message === 'UPLOAD_AUTH_REQUIRED') {
+          console.log(`🔐 Authentication required for meeting ${uploadItem.meeting_id} - marking as pending for later retry`);
+          await this.database.updateUploadQueueStatus(uploadItem.meeting_id, 'pending', 'Authentication required');
+          // Don't increment attempts for auth failures
+          continue;
+        }
+        
         if (uploadItem.attempts < this.maxRetries) {
           console.log(`🔄 Will retry upload for meeting ${uploadItem.meeting_id} (attempt ${uploadItem.attempts + 1}/${this.maxRetries})`);
           
@@ -179,7 +187,8 @@ class UploadService {
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
           this.mainWindow.webContents.send('upload-auth-required', { meetingId });
         }
-        return;
+        // Re-throw the error to prevent marking as completed
+        throw new Error('UPLOAD_AUTH_REQUIRED');
       }
       
       await this.database.setMeetingUploadStatus(meetingId, 'failed');

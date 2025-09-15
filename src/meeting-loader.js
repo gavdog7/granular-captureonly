@@ -62,7 +62,13 @@ class MeetingLoader {
 
       this.lastParsedTime = new Date();
       this.cachedMeetings = todaysMeetings;
-      
+
+      // Update calendar sync date in store
+      if (this.store) {
+        this.store.set('lastCalendarSyncDate', dateOverride.today());
+        console.log('📅 Updated calendar sync date to', dateOverride.today());
+      }
+
       console.log(`Loaded ${todaysMeetings.length} meetings for today from Excel`);
       
       // Debug: Show which meetings are being loaded
@@ -101,10 +107,17 @@ class MeetingLoader {
     
     // Update cached meetings
     this.cachedMeetings = await this.database.getTodaysMeetings();
-    
+
+    // Update calendar sync date in store
+    if (this.store) {
+      this.store.set('lastCalendarSyncDate', dateOverride.today());
+      console.log('📅 Updated calendar sync date to', dateOverride.today());
+    }
+
     // Notify renderer of changes
     if (global.mainWindow) {
       global.mainWindow.webContents.send('meetings-refreshed');
+      global.mainWindow.webContents.send('calendar-synced');
     }
     
     return this.cachedMeetings;

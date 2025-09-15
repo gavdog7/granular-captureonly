@@ -9,6 +9,8 @@ class MeetingApp {
         this.isLoading = false;
         this.showingAll = false;
         this.showingAllPastEvents = false;
+        this.lastLoadedDate = dateOverride.today();
+        this.dateCheckInterval = null;
         this.init();
     }
 
@@ -16,8 +18,10 @@ class MeetingApp {
         this.setupEventListeners();
         this.loadMeetings();
         this.checkGoogleAuthStatus();
-        
+        this.updateCalendarButtonColor();
+
         setInterval(() => this.updateMeetingStatuses(), 30000);
+        this.startDateChangeDetection();
     }
 
     setupEventListeners() {
@@ -35,6 +39,10 @@ class MeetingApp {
 
         ipcRenderer.on('meetings-refreshed', () => {
             this.loadMeetings();
+        });
+
+        ipcRenderer.on('calendar-synced', () => {
+            this.updateCalendarButtonColor();
         });
 
         // Listen for upload status changes
@@ -68,9 +76,10 @@ class MeetingApp {
             }
             this.showingAll = false;
             this.showingAllPastEvents = false;
-            
+            this.lastLoadedDate = dateOverride.today();
+
             // Reset show more button will be handled by updateShowMoreButton()
-            
+
             this.renderMeetings();
             this.updateStatus(`Loaded ${this.meetings.length} meetings for today`);
         } catch (error) {
@@ -794,6 +803,66 @@ class MeetingApp {
         } catch (error) {
             console.error('Error deleting meeting:', error);
             this.showError('Failed to delete meeting: ' + error.message);
+        }
+    }
+
+    startDateChangeDetection() {
+        // Check for date changes every minute
+        this.dateCheckInterval = setInterval(() => {
+            this.checkForDateChange();
+        }, 60000);
+
+        // Also schedule a check at midnight
+        this.scheduleMidnightCheck();
+    }
+
+    checkForDateChange() {
+        const currentDate = dateOverride.today();
+        if (currentDate !== this.lastLoadedDate) {
+            console.log(`📅 Date changed from ${this.lastLoadedDate} to ${currentDate} - refreshing meetings`);
+            this.loadMeetings();
+        }
+    }
+
+    scheduleMidnightCheck() {
+        const now = new Date();
+        const midnight = new Date(now);
+        midnight.setHours(24, 0, 0, 0); // Next midnight
+
+        const msUntilMidnight = midnight - now;
+
+        setTimeout(() => {
+            console.log('🌙 Midnight reached - checking for new day meetings');
+            this.checkForDateChange();
+
+            // Schedule daily checks every 24 hours after midnight
+            setInterval(() => {
+                this.checkForDateChange();
+            }, 24 * 60 * 60 * 1000);
+        }, msUntilMidnight);
+    }
+
+    async updateCalendarButtonColor() {
+        try {
+            const lastSyncDate = await ipcRenderer.invoke('get-last-calendar-sync-date');
+            const currentDate = dateOverride.today();
+            const calendarBtn = document.getElementById('excel-upload-btn');
+
+            if (!calendarBtn) return;
+
+            if (lastSyncDate === currentDate) {
+                // Calendar is current - remove stale class
+                calendarBtn.classList.remove('stale');
+                calendarBtn.title = 'Upload Excel file (calendar up to date)';
+            } else {
+                // Calendar is stale - add stale class
+                calendarBtn.classList.add('stale');
+                calendarBtn.title = lastSyncDate
+                    ? `Upload Excel file (last synced: ${lastSyncDate})`
+                    : 'Upload Excel file (never synced)';
+            }
+        } catch (error) {
+            console.error('Error updating calendar button color:', error);
         }
     }
 

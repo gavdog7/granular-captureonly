@@ -200,7 +200,8 @@ async function initializeApp() {
         manualExportPath: path.join(app.getPath('desktop'), 'GranularExports'),
         exportTime: '18:00',
         autoExport: false,
-        googleDriveFolderId: null
+        googleDriveFolderId: null,
+        lastCalendarSyncDate: null
       }
     });
 
@@ -301,6 +302,15 @@ ipcMain.handle('get-settings', () => {
 
 ipcMain.handle('set-setting', (event, key, value) => {
   store.set(key, value);
+  return { success: true };
+});
+
+ipcMain.handle('get-last-calendar-sync-date', () => {
+  return store.get('lastCalendarSyncDate');
+});
+
+ipcMain.handle('update-calendar-sync-date', (event, date) => {
+  store.set('lastCalendarSyncDate', date);
   return { success: true };
 });
 

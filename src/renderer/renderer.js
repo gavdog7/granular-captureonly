@@ -850,22 +850,39 @@ class MeetingApp {
 
             if (!calendarBtn) return;
 
+            console.log('🔍 Calendar button color check:', { lastSyncDate, currentDate });
+
             if (lastSyncDate === currentDate) {
                 // Calendar is current - remove stale class
                 calendarBtn.classList.remove('stale');
                 calendarBtn.title = 'Upload Excel file (calendar up to date)';
+                console.log('📅 Calendar button set to current (not stale)');
             } else {
                 // Calendar is stale - add stale class
                 calendarBtn.classList.add('stale');
                 calendarBtn.title = lastSyncDate
                     ? `Upload Excel file (last synced: ${lastSyncDate})`
                     : 'Upload Excel file (never synced)';
+                console.log('📅 Calendar button set to stale');
             }
         } catch (error) {
             console.error('Error updating calendar button color:', error);
         }
     }
 
+    cleanup() {
+        if (this.dateCheckInterval) {
+            clearInterval(this.dateCheckInterval);
+            this.dateCheckInterval = null;
+            console.log('🧹 Cleaned up date check interval');
+        }
+    }
+
 }
 
 const app = new MeetingApp();
+
+// Add cleanup on window close
+window.addEventListener('beforeunload', () => {
+    app.cleanup();
+});

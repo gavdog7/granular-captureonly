@@ -14,17 +14,24 @@ class MeetingLoader {
 
   async loadTodaysMeetings() {
     const today = dateOverride.today();
-    
+
     // Check if we already have meetings for today
     const existingMeetings = await this.database.getTodaysMeetings();
-    
+
     if (existingMeetings.length > 0) {
       // We have existing meetings for today - use them without re-scraping
       this.cachedMeetings = existingMeetings;
       console.log(`Using existing ${existingMeetings.length} meetings for today (no re-scraping)`);
+
+      // Update calendar sync date even when using cached meetings
+      if (this.store) {
+        this.store.set('lastCalendarSyncDate', today);
+        console.log('📅 Updated calendar sync date to', today, '(from cached meetings)');
+      }
+
       return existingMeetings;
     }
-    
+
     // No existing meetings - scrape from Excel (first time today)
     return await this.loadMeetingsFromExcel();
   }

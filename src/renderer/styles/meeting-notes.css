@@ -79,6 +79,54 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
+    position: relative;
+    cursor: default;
+}
+
+/* Enhanced Tooltip Styling */
+.status-indicator::after {
+    content: attr(title);
+    position: absolute;
+    bottom: -35px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    z-index: 1000;
+    pointer-events: none;
+    line-height: 1.2;
+}
+
+.status-indicator::before {
+    content: '';
+    position: absolute;
+    bottom: -29px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 4px solid rgba(0, 0, 0, 0.9);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.status-indicator:hover::after,
+.status-indicator:hover::before {
+    opacity: 1;
+    visibility: visible;
 }
 
 .indicator-circle {
@@ -123,6 +171,28 @@ body {
 
 #recordingIndicator:hover .indicator-circle {
     opacity: 0.7;
+}
+
+/* File Growth Status Indicator */
+#fileGrowthIndicator .indicator-circle {
+    border-color: #a0a0a0; /* Default: gray when not monitoring */
+    cursor: default;
+}
+
+#fileGrowthIndicator.growing .indicator-circle {
+    border-color: #90d4a0; /* Green: file is growing */
+    background: rgba(144, 212, 160, 0.2);
+}
+
+#fileGrowthIndicator.not-growing .indicator-circle {
+    border-color: #e8a0a0; /* Red: file not growing */
+    background: rgba(232, 160, 160, 0.3);
+    opacity: 0.8;
+}
+
+#fileGrowthIndicator.no-file .indicator-circle {
+    border-color: #d0d0d0; /* Light gray: no file found */
+    opacity: 0.5;
 }
 
 @keyframes pulse {

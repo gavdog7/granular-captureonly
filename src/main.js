@@ -9,6 +9,7 @@ const AudioRecorder = require('./audio-recorder');
 const UploadService = require('./upload-service');
 const GoogleDriveService = require('./google-drive');
 const { MeetingHealthChecker } = require('./meeting-health-checker');
+const SMBMountService = require('./smb-mount-service');
 const Store = require('electron-store');
 const { setupTestDate, disableTestDate, dateOverride } = require('./date-override');
 
@@ -18,6 +19,7 @@ let meetingLoader;
 let audioRecorder;
 let uploadService;
 let googleDriveService;
+let smbMountService;
 let healthChecker;
 let store;
 
@@ -212,6 +214,15 @@ async function initializeApp() {
       console.log('Google Drive service initialized');
     } catch (error) {
       console.warn('Google Drive service initialization failed (will retry on first upload):', error.message);
+    }
+
+    // Initialize SMB mount service
+    smbMountService = new SMBMountService(store, mainWindow);
+    try {
+      await smbMountService.initialize();
+      console.log('SMB mount service initialized');
+    } catch (error) {
+      console.warn('SMB mount service initialization failed:', error.message);
     }
     
     // Initialize services with Google Drive support
@@ -833,17 +844,68 @@ ipcMain.handle('get-recording-sessions', async (event, meetingId) => {
     if (!audioRecorder) {
       throw new Error('Audio recorder not initialized');
     }
-    
+
     // Validate meeting ID
     if (!meetingId || isNaN(meetingId)) {
       // Return empty array for invalid meeting IDs
       return [];
     }
-    
+
     return await audioRecorder.getRecordingSessions(meetingId);
   } catch (error) {
     console.error('Error getting recording sessions:', error);
     throw error;
+  }
+});
+
+// File growth monitoring IPC handler
+ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
+  try {
+    console.log(`🔍 GROWTH: Checking file growth for meeting ${meetingId}`);
+
+    // Get meeting info to find file path
+    const meeting = await database.getMeetingById(meetingId);
+    if (!meeting) {
+      console.log(`⚠️ GROWTH: Meeting ${meetingId} not found`);
+      return { exists: false, error: 'Meeting not found' };
+    }
+
+    // Get active recording sessions (not completed)
+    const recordings = await database.all(
+      'SELECT final_path FROM recording_sessions WHERE meeting_id = ? AND completed = 0 ORDER BY started_at DESC LIMIT 1',
+      [meetingId]
+    );
+
+    if (recordings.length === 0) {
+      console.log(`📁 GROWTH: No active recording for meeting ${meetingId}`);
+      return { exists: false, isActive: false };
+    }
+
+    const filePath = recordings[0].final_path;
+    console.log(`📂 GROWTH: Checking file: ${filePath}`);
+
+    // Check if file exists and get size
+    try {
+      const stats = await fs.stat(filePath);
+      const currentSize = stats.size;
+      const currentTime = Date.now();
+
+      console.log(`📊 GROWTH: File size: ${currentSize} bytes at ${new Date(currentTime).toLocaleTimeString()}`);
+
+      return {
+        exists: true,
+        isActive: true,
+        size: currentSize,
+        timestamp: currentTime,
+        path: filePath
+      };
+    } catch (fileError) {
+      console.log(`❌ GROWTH: File not accessible: ${fileError.message}`);
+      return { exists: false, error: fileError.message };
+    }
+  } catch (error) {
+    console.error('❌ GROWTH: Error checking file growth:', error);
+    return { exists: false, error: error.message };
   }
 });
 
@@ -898,4 +960,79 @@ ipcMain.handle('delete-meeting', async (event, meetingId) => {
   }
 });
 
-module.exports = { database, meetingLoader, audioRecorder, store };
+// SMB Mount Service IPC handlers
+ipcMain.handle('check-smb-connection-status', async () => {
+  try {
+    if (!smbMountService) {
+      return { success: false, error: 'SMB service not initialized' };
+    }
+    const status = await smbMountService.getConnectionStatus();
+    return { success: true, ...status };
+  } catch (error) {
+    console.error('Error checking SMB connection status:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('connect-smb', async (event, credentials) => {
+  try {
+    if (!smbMountService) {
+      return { success: false, error: 'SMB service not initialized' };
+    }
+
+    console.log(`🔌 Attempting SMB connection for user: ${credentials.username}`);
+    const result = await smbMountService.connect(credentials.username, credentials.password);
+
+    if (result.success) {
+      console.log('✅ SMB connection successful');
+    } else {
+      console.log(`❌ SMB connection failed: ${result.error}`);
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error connecting to SMB:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('disconnect-smb', async () => {
+  try {
+    if (!smbMountService) {
+      return { success: false, error: 'SMB service not initialized' };
+    }
+
+    console.log('🔌 Disconnecting from SMB share...');
+    const result = await smbMountService.disconnect();
+
+    if (result.success) {
+      console.log('✅ SMB disconnection successful');
+    } else {
+      console.log(`❌ SMB disconnection failed: ${result.error}`);
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error disconnecting SMB:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('test-smb-connection', async (event, credentials) => {
+  try {
+    if (!smbMountService) {
+      return { success: false, error: 'SMB service not initialized' };
+    }
+
+    console.log(`🧪 Testing SMB connection for user: ${credentials.username}`);
+    const result = await smbMountService.testConnection(credentials.username, credentials.password);
+
+    console.log(`🧪 SMB test result: ${result.success ? 'success' : 'failed'}`);
+    return result;
+  } catch (error) {
+    console.error('Error testing SMB connection:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+module.exports = { database, meetingLoader, audioRecorder, store, smbMountService };

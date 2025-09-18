@@ -14,6 +14,12 @@ let selectedSuggestionIndex = -1;
 let currentSuggestions = [];
 let suggestionTimeout;
 
+// File growth monitoring state
+let fileGrowthInterval;
+let previousFileSize = 0;
+let previousCheckTime = 0;
+let fileGrowthHistory = []; // Track last 3 checks
+
 // Initialize page
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Meeting notes page loading...');
@@ -199,6 +205,9 @@ function initializeEventListeners() {
     window.addEventListener('beforeunload', (e) => {
         // Stop recording status updates
         stopRecordingStatusUpdates();
+
+        // Stop file growth monitoring
+        stopFileGrowthMonitoring();
         
         // Stop recording if active
         if (currentRecordingStatus && currentRecordingStatus.isRecording) {
@@ -352,9 +361,17 @@ function initializeEventListeners() {
 // Load meeting data from database
 async function loadMeetingData() {
     try {
-        console.log('📊 Loading meeting data for ID:', currentMeetingId);
+        console.log('📊 NOTES: Loading meeting data for ID:', currentMeetingId);
+        console.log('📍 NOTES: Page URL:', window.location.href);
+        console.log('🕒 NOTES: Load time:', new Date().toISOString());
+
         const meeting = await ipcRenderer.invoke('get-meeting-by-id', currentMeetingId);
-        console.log('📊 Meeting data received:', meeting);
+        console.log('📊 NOTES: Meeting data received:', {
+            id: meeting?.id,
+            title: meeting?.title,
+            startTime: meeting?.start_time,
+            folderName: meeting?.folder_name
+        });
         
         if (!meeting) {
             console.error('❌ Meeting not found for ID:', currentMeetingId);
@@ -407,9 +424,20 @@ async function loadMeetingData() {
             console.log('No notes content found for meeting', meeting.id);
         }
         
+        // Check for existing recordings
+        try {
+            const recordings = await ipcRenderer.invoke('get-recording-sessions', currentMeetingId);
+            console.log('🎙️ NOTES: Existing recordings:', recordings?.length || 0);
+            recordings?.forEach((rec, index) => {
+                console.log(`📼 NOTES: Recording ${index + 1}: ${rec.final_path} (${rec.duration}s)`);
+            });
+        } catch (error) {
+            console.warn('⚠️ NOTES: Could not load recording sessions:', error);
+        }
+
         // Load attachments
         await loadAttachments();
-        
+
         // Set initial save status
         setSaveStatus('saved');
         
@@ -654,12 +682,12 @@ function setSaveStatus(status) {
         return;
     }
     indicator.className = `status-indicator ${status}`;
-    
-    // Update tooltip
+
+    // Update tooltip with enhanced descriptions
     const tooltips = {
-        saved: 'Saved',
-        saving: 'Saving...',
-        error: 'Error saving'
+        saved: 'Notes are saved',
+        saving: 'Saving notes...',
+        error: 'Error saving notes'
     };
     indicator.title = tooltips[status] || 'Save Status';
     console.log('Save status indicator updated to:', status);
@@ -668,39 +696,43 @@ function setSaveStatus(status) {
 // Set recording status indicator
 function setRecordingStatus(recordingStatus) {
     const indicator = document.getElementById('recordingIndicator');
-    
+
     if (!recordingStatus || !recordingStatus.isRecording) {
         indicator.className = 'status-indicator';
-        indicator.title = 'Not Recording - Click to Start';
+        indicator.title = 'Click to start recording';
         return;
     }
-    
+
     if (recordingStatus.isPaused) {
         indicator.className = 'status-indicator paused';
-        indicator.title = `Recording Paused (${formatDuration(recordingStatus.duration)}) - Click to Resume`;
+        indicator.title = `Recording paused (${formatDuration(recordingStatus.duration)}) - Click to resume`;
     } else {
         indicator.className = 'status-indicator recording';
-        indicator.title = `Recording Active (${formatDuration(recordingStatus.duration)}) - Click to Pause`;
+        indicator.title = `Recording active (${formatDuration(recordingStatus.duration)}) - Click to pause`;
     }
 }
 
 // Initialize recording functionality
 async function initializeRecording() {
     try {
-        console.log('Initializing recording for meeting:', currentMeetingId);
-        
+        console.log('🎙️ NOTES: Initializing recording for meeting:', currentMeetingId);
+
         // Set up recording indicator click handler
         const recordingIndicator = document.getElementById('recordingIndicator');
         recordingIndicator.addEventListener('click', handleRecordingIndicatorClick);
-        
+
         // Start recording automatically when entering meeting page
         await startRecording();
-        
+
         // Set up periodic status updates
         startRecordingStatusUpdates();
-        
+
+        // Initialize file growth monitoring
+        console.log('🔍 NOTES: Starting file growth monitoring...');
+        await initializeFileGrowthMonitoring();
+
     } catch (error) {
-        console.error('Error initializing recording:', error);
+        console.error('❌ NOTES: Error initializing recording:', error);
         setRecordingStatus(null);
     }
 }
@@ -823,6 +855,124 @@ function stopRecordingStatusUpdates() {
     if (recordingStatusInterval) {
         clearInterval(recordingStatusInterval);
         recordingStatusInterval = null;
+    }
+}
+
+// Initialize file growth monitoring
+async function initializeFileGrowthMonitoring() {
+    console.log('🔍 GROWTH: Initializing file growth monitoring');
+
+    // Set up periodic file growth checks every 30 seconds
+    fileGrowthInterval = setInterval(async () => {
+        await checkFileGrowth();
+    }, 30000);
+
+    // Initial check
+    await checkFileGrowth();
+}
+
+// Check if recording file is growing
+async function checkFileGrowth() {
+    try {
+        console.log('📊 GROWTH: Checking file growth...');
+
+        const meetingId = parseInt(currentMeetingId);
+        if (isNaN(meetingId)) {
+            console.log('⚠️ GROWTH: Invalid meeting ID, skipping check');
+            return;
+        }
+
+        const result = await ipcRenderer.invoke('get-file-growth-status', meetingId);
+        console.log('📋 GROWTH: File status result:', result);
+
+        if (!result.exists) {
+            if (result.isActive === false) {
+                setFileGrowthStatus('no-file', 'No recording file found');
+            } else {
+                setFileGrowthStatus('no-file', 'No recording file found');
+            }
+            console.log('📁 GROWTH: No file found or not active');
+            return;
+        }
+
+        const currentSize = result.size;
+        const currentTime = result.timestamp;
+
+        // Add to history
+        fileGrowthHistory.push({ size: currentSize, time: currentTime });
+
+        // Keep only last 3 checks (90 seconds of history)
+        if (fileGrowthHistory.length > 3) {
+            fileGrowthHistory.shift();
+        }
+
+        // Determine if file is growing
+        let isGrowing = false;
+        let growthMessage = '';
+
+        if (fileGrowthHistory.length >= 2) {
+            const oldest = fileGrowthHistory[0];
+            const newest = fileGrowthHistory[fileGrowthHistory.length - 1];
+            const sizeDiff = newest.size - oldest.size;
+            const timeDiff = (newest.time - oldest.time) / 1000; // seconds
+
+            console.log(`📈 GROWTH: Size difference: ${sizeDiff} bytes over ${timeDiff} seconds`);
+
+            if (sizeDiff > 1000) { // At least 1KB growth
+                isGrowing = true;
+                const growthRate = Math.round(sizeDiff / timeDiff);
+                growthMessage = `Audio file growing: ${growthRate.toLocaleString()} bytes/sec - Recording working properly`;
+            } else {
+                isGrowing = false;
+                growthMessage = `Audio file not growing (${sizeDiff} bytes in ${Math.round(timeDiff)}s) - Check microphone or restart recording`;
+            }
+        } else {
+            // First few checks, assume growing if file exists
+            const fileSizeKB = Math.round(currentSize / 1024);
+            growthMessage = `Monitoring file: ${fileSizeKB.toLocaleString()}KB - Checking growth...`;
+            isGrowing = true;
+        }
+
+        setFileGrowthStatus(isGrowing ? 'growing' : 'not-growing', growthMessage);
+
+        console.log(`🎯 GROWTH: File ${isGrowing ? 'IS' : 'NOT'} growing - ${growthMessage}`);
+
+    } catch (error) {
+        console.error('❌ GROWTH: Error checking file growth:', error);
+        setFileGrowthStatus('no-file', 'Error checking file');
+    }
+}
+
+// Set file growth status indicator
+function setFileGrowthStatus(status, message) {
+    const indicator = document.getElementById('fileGrowthIndicator');
+    if (!indicator) {
+        console.error('❌ GROWTH: File growth indicator element not found!');
+        return;
+    }
+
+    indicator.className = `status-indicator ${status}`;
+
+    // Set enhanced tooltip based on status
+    const defaultTooltips = {
+        'growing': 'Audio file is growing - Recording working properly',
+        'not-growing': 'Audio file not growing - Check microphone or restart recording',
+        'no-file': 'No recording file found',
+        '': 'File growth monitoring disabled'
+    };
+
+    // Use custom message if provided, otherwise use default
+    indicator.title = message || defaultTooltips[status] || 'File Growth Status';
+
+    console.log(`🔄 GROWTH: Status updated to: ${status} (${indicator.title})`);
+}
+
+// Stop file growth monitoring
+function stopFileGrowthMonitoring() {
+    if (fileGrowthInterval) {
+        clearInterval(fileGrowthInterval);
+        fileGrowthInterval = null;
+        console.log('🛑 GROWTH: File growth monitoring stopped');
     }
 }
 

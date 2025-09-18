@@ -872,7 +872,7 @@ ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
 
     // Get active recording sessions (not completed)
     const recordings = await database.all(
-      'SELECT final_path FROM recording_sessions WHERE meeting_id = ? AND completed = 0 ORDER BY started_at DESC LIMIT 1',
+      'SELECT temp_path, final_path FROM recording_sessions WHERE meeting_id = ? AND completed = 0 ORDER BY started_at DESC LIMIT 1',
       [meetingId]
     );
 
@@ -881,8 +881,14 @@ ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
       return { exists: false, isActive: false };
     }
 
-    const filePath = recordings[0].final_path;
+    // Use temp_path during recording, final_path if available
+    const filePath = recordings[0].temp_path || recordings[0].final_path;
     console.log(`📂 GROWTH: Checking file: ${filePath}`);
+
+    if (!filePath) {
+      console.log(`❌ GROWTH: No file path available for meeting ${meetingId}`);
+      return { exists: false, error: 'No file path available' };
+    }
 
     // Check if file exists and get size
     try {

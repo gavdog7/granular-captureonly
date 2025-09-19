@@ -14,11 +14,8 @@ let selectedSuggestionIndex = -1;
 let currentSuggestions = [];
 let suggestionTimeout;
 
-// File growth monitoring state
-let fileGrowthInterval;
-let previousFileSize = 0;
-let previousCheckTime = 0;
-let fileGrowthHistory = []; // Track last 3 checks
+// File size monitoring state
+let fileSizeInterval;
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', async () => {
@@ -206,8 +203,8 @@ function initializeEventListeners() {
         // Stop recording status updates
         stopRecordingStatusUpdates();
 
-        // Stop file growth monitoring
-        stopFileGrowthMonitoring();
+        // Stop file size monitoring
+        stopFileSizeMonitoring();
         
         // Stop recording if active
         if (currentRecordingStatus && currentRecordingStatus.isRecording) {
@@ -727,9 +724,9 @@ async function initializeRecording() {
         // Set up periodic status updates
         startRecordingStatusUpdates();
 
-        // Initialize file growth monitoring
-        console.log('🔍 NOTES: Starting file growth monitoring...');
-        await initializeFileGrowthMonitoring();
+        // Initialize file size monitoring
+        console.log('🔍 NOTES: Starting file size monitoring...');
+        await initializeFileSizeMonitoring();
 
     } catch (error) {
         console.error('❌ NOTES: Error initializing recording:', error);
@@ -858,96 +855,60 @@ function stopRecordingStatusUpdates() {
     }
 }
 
-// Initialize file growth monitoring
-async function initializeFileGrowthMonitoring() {
-    console.log('🔍 GROWTH: Initializing file growth monitoring');
+// Initialize file size monitoring
+async function initializeFileSizeMonitoring() {
+    console.log('🔍 SIZE: Initializing file size monitoring');
 
-    // Set up periodic file growth checks every 30 seconds
-    fileGrowthInterval = setInterval(async () => {
-        await checkFileGrowth();
-    }, 30000);
+    // Set up periodic file size checks every 2 seconds
+    fileSizeInterval = setInterval(async () => {
+        await checkFileSize();
+    }, 2000);
 
     // Initial check
-    await checkFileGrowth();
+    await checkFileSize();
 }
 
-// Check if recording file is growing
-async function checkFileGrowth() {
+// Check recording file size
+async function checkFileSize() {
     try {
-        console.log('📊 GROWTH: Checking file growth...');
-
         const meetingId = parseInt(currentMeetingId);
         if (isNaN(meetingId)) {
-            console.log('⚠️ GROWTH: Invalid meeting ID, skipping check');
+            console.log('⚠️ SIZE: Invalid meeting ID, skipping check');
             return;
         }
 
         const result = await ipcRenderer.invoke('get-file-growth-status', meetingId);
-        console.log('📋 GROWTH: File status result:', result);
 
         if (!result.exists) {
-            if (result.isActive === false) {
-                setFileGrowthStatus('no-file', 'No recording file found');
-            } else {
-                setFileGrowthStatus('no-file', 'No recording file found');
-            }
-            console.log('📁 GROWTH: No file found or not active');
+            setFileSizeStatus('no-file', 'No recording file found');
             return;
         }
 
         const currentSize = result.size;
-        const currentTime = result.timestamp;
+        const sizeInKB = currentSize / 1024;
+        const sizeThreshold = 500; // 500KB threshold
 
-        // Add to history
-        fileGrowthHistory.push({ size: currentSize, time: currentTime });
-
-        // Keep only last 3 checks (90 seconds of history)
-        if (fileGrowthHistory.length > 3) {
-            fileGrowthHistory.shift();
-        }
-
-        // Determine if file is growing
-        let isGrowing = false;
-        let growthMessage = '';
-
-        if (fileGrowthHistory.length >= 2) {
-            const oldest = fileGrowthHistory[0];
-            const newest = fileGrowthHistory[fileGrowthHistory.length - 1];
-            const sizeDiff = newest.size - oldest.size;
-            const timeDiff = (newest.time - oldest.time) / 1000; // seconds
-
-            console.log(`📈 GROWTH: Size difference: ${sizeDiff} bytes over ${timeDiff} seconds`);
-
-            if (sizeDiff > 1000) { // At least 1KB growth
-                isGrowing = true;
-                const growthRate = Math.round(sizeDiff / timeDiff);
-                growthMessage = `Audio file growing: ${growthRate.toLocaleString()} bytes/sec - Recording working properly`;
-            } else {
-                isGrowing = false;
-                growthMessage = `Audio file not growing (${sizeDiff} bytes in ${Math.round(timeDiff)}s) - Check microphone or restart recording`;
-            }
+        if (currentSize < sizeThreshold * 1024) {
+            // File is smaller than 500KB - show red
+            const message = `Recording file: ${Math.round(sizeInKB)}KB (< ${sizeThreshold}KB)`;
+            setFileSizeStatus('small-file', message);
         } else {
-            // First few checks, assume growing if file exists
-            const fileSizeKB = Math.round(currentSize / 1024);
-            growthMessage = `Monitoring file: ${fileSizeKB.toLocaleString()}KB - Checking growth...`;
-            isGrowing = true;
+            // File is 500KB or larger - show green
+            const message = `Recording file: ${Math.round(sizeInKB)}KB`;
+            setFileSizeStatus('large-file', message);
         }
-
-        setFileGrowthStatus(isGrowing ? 'growing' : 'not-growing', growthMessage);
-
-        console.log(`🎯 GROWTH: File ${isGrowing ? 'IS' : 'NOT'} growing - ${growthMessage}`);
 
     } catch (error) {
-        console.error('❌ GROWTH: Error checking file growth:', error);
-        setFileGrowthStatus('no-file', 'Error checking file');
+        console.error('❌ SIZE: Error checking file size:', error);
+        setFileSizeStatus('no-file', 'Error checking file');
     }
 }
 
-// Set file growth status indicator
-function setFileGrowthStatus(status, message) {
+// Set file size status indicator
+function setFileSizeStatus(status, message) {
     const indicator = document.getElementById('fileGrowthIndicator');
     if (!indicator) {
-        console.error('❌ GROWTH: File growth indicator element not found!');
+        console.error('❌ SIZE: File size indicator element not found!');
         return;
     }
 
@@ -955,24 +916,22 @@ function setFileGrowthStatus(status, message) {
 
     // Set enhanced tooltip based on status
     const defaultTooltips = {
-        'growing': 'Audio file is growing - Recording working properly',
-        'not-growing': 'Audio file not growing - Check microphone or restart recording',
+        'small-file': 'Recording file is small (< 500KB)',
+        'large-file': 'Recording file size OK',
         'no-file': 'No recording file found',
-        '': 'File growth monitoring disabled'
+        '': 'File size monitoring disabled'
     };
 
     // Use custom message if provided, otherwise use default
-    indicator.title = message || defaultTooltips[status] || 'File Growth Status';
-
-    console.log(`🔄 GROWTH: Status updated to: ${status} (${indicator.title})`);
+    indicator.title = message || defaultTooltips[status] || 'File Size Status';
 }
 
-// Stop file growth monitoring
-function stopFileGrowthMonitoring() {
-    if (fileGrowthInterval) {
-        clearInterval(fileGrowthInterval);
-        fileGrowthInterval = null;
-        console.log('🛑 GROWTH: File growth monitoring stopped');
+// Stop file size monitoring
+function stopFileSizeMonitoring() {
+    if (fileSizeInterval) {
+        clearInterval(fileSizeInterval);
+        fileSizeInterval = null;
+        console.log('🛑 SIZE: File size monitoring stopped');
     }
 }
 

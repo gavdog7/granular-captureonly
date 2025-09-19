@@ -179,13 +179,13 @@ body {
     cursor: default;
 }
 
-#fileGrowthIndicator.growing .indicator-circle {
-    border-color: #90d4a0; /* Green: file is growing */
+#fileGrowthIndicator.large-file .indicator-circle {
+    border-color: #90d4a0; /* Green: file >= 500KB */
     background: rgba(144, 212, 160, 0.2);
 }
 
-#fileGrowthIndicator.not-growing .indicator-circle {
-    border-color: #e8a0a0; /* Red: file not growing */
+#fileGrowthIndicator.small-file .indicator-circle {
+    border-color: #e8a0a0; /* Red: file < 500KB */
     background: rgba(232, 160, 160, 0.3);
     opacity: 0.8;
 }

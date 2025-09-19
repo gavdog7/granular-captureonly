@@ -6,10 +6,10 @@ const fs = require('fs').promises;
  */
 class FileUtils {
   /**
-   * Check if a file is a silence file (.silence extension)
+   * Check if a file is a silence file (.silence.opus extension)
    */
   static isSilenceFile(filePath) {
-    return filePath.endsWith('.silence');
+    return filePath.endsWith('.silence.opus') || filePath.endsWith('.silence');
   }
 
   /**
@@ -42,7 +42,11 @@ class FileUtils {
       throw new Error('File is not a .silence file');
     }
 
-    return silenceFilePath.replace('.silence', '.opus');
+    if (silenceFilePath.endsWith('.silence.opus')) {
+      return silenceFilePath.replace('.silence.opus', '.opus');
+    } else {
+      return silenceFilePath.replace('.silence', '.opus');
+    }
   }
 
   /**
@@ -50,7 +54,7 @@ class FileUtils {
    */
   static getSilenceFileFromMeeting(meetingFilePath) {
     const ext = path.extname(meetingFilePath);
-    return meetingFilePath.replace(ext, '.silence');
+    return meetingFilePath.replace(ext, '.silence' + ext);
   }
 
   /**

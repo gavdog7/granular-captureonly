@@ -11,7 +11,7 @@ const path = require('path');
 class AudioSplitter {
   constructor(options = {}) {
     this.tempSuffix = options.tempSuffix || '.tmp';
-    this.silenceExtension = options.silenceExtension || '.silence';
+    this.silenceExtension = options.silenceExtension || '.silence.opus';
     this.preserveOriginal = options.preserveOriginal || false;
   }
 

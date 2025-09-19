@@ -142,6 +142,11 @@ class AudioSplitter {
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
+      // Track the process globally for cleanup
+      if (global.trackProcess) {
+        global.trackProcess(ffmpeg, `FFmpeg split ${path.basename(inputFile)}`);
+      }
+
       let stderr = '';
       ffmpeg.stderr.on('data', (data) => {
         stderr += data.toString();
@@ -221,6 +226,11 @@ class AudioSplitter {
         filePath
       ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
+      // Track the process globally for cleanup
+      if (global.trackProcess) {
+        global.trackProcess(ffprobe, `FFprobe validate ${path.basename(filePath)}`);
+      }
+
       let stdout = '';
       let stderr = '';
 
@@ -291,6 +301,11 @@ class AudioSplitter {
         filePath
       ]);
 
+      // Track the process globally for cleanup
+      if (global.trackProcess) {
+        global.trackProcess(ffprobe, `FFprobe duration ${path.basename(filePath)}`);
+      }
+
       let stdout = '';
       ffprobe.stdout.on('data', (data) => {
         stdout += data.toString();
@@ -325,6 +340,11 @@ class AudioSplitter {
         '-c', 'copy',
         outputPath
       ]);
+
+      // Track the process globally for cleanup
+      if (global.trackProcess) {
+        global.trackProcess(ffmpeg, `FFmpeg merge ${path.basename(outputPath)}`);
+      }
 
       ffmpeg.on('close', (code) => {
         if (code === 0) {

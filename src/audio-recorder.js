@@ -401,21 +401,26 @@ class AudioRecorder {
         'start',
         '--output', outputPath,
         '--bitrate', '32000'
-      ], { 
+      ], {
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: false
       });
-      
+
+      // Track the process globally for cleanup
+      if (global.trackProcess) {
+        global.trackProcess(process, `Audio capture for ${path.basename(outputPath)}`);
+      }
+
       // Log stdout from the binary
       process.stdout.on('data', (data) => {
         console.log(`Audio capture stdout: ${data.toString().trim()}`);
       });
-      
+
       // Log stderr from the binary
       process.stderr.on('data', (data) => {
         console.error(`Audio capture stderr: ${data.toString().trim()}`);
       });
-      
+
       process.on('error', (error) => {
         console.error('Audio capture process error:', error);
         reject(new Error(`Failed to start audio capture: ${error.message}`));
@@ -570,6 +575,46 @@ class AudioRecorder {
     }
 
     this.activeRecordings.clear();
+  }
+
+  /**
+   * Force cleanup - immediately kill all processes (for emergency shutdown)
+   */
+  forceCleanup() {
+    console.log('Force cleaning up audio recordings...');
+
+    for (const [meetingId, recording] of this.activeRecordings.entries()) {
+      try {
+        if (recording.process && !recording.process.killed) {
+          console.log(`Force killing audio process for meeting ${meetingId} (PID: ${recording.process.pid})`);
+          recording.process.kill('SIGKILL');
+        }
+        if (recording.durationTimer) {
+          clearInterval(recording.durationTimer);
+        }
+      } catch (error) {
+        console.error(`Error force stopping recording ${meetingId}:`, error);
+      }
+    }
+
+    this.activeRecordings.clear();
+  }
+
+  /**
+   * Get all active process PIDs (for monitoring)
+   */
+  getActiveProcesses() {
+    const processes = [];
+    for (const [meetingId, recording] of this.activeRecordings.entries()) {
+      if (recording.process && !recording.process.killed) {
+        processes.push({
+          meetingId,
+          pid: recording.process.pid,
+          sessionId: recording.sessionId
+        });
+      }
+    }
+    return processes;
   }
 
   /**

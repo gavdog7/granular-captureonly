@@ -248,6 +248,11 @@ class PostRecordingAnalyzer {
         '-'
       ], { stdio: ['pipe', 'pipe', 'pipe'] });
 
+      // Track the process globally for cleanup
+      if (global.trackProcess) {
+        global.trackProcess(ffmpeg, `FFmpeg level analysis ${path.basename(filePath)}`);
+      }
+
       let stderr = '';
       ffmpeg.stderr.on('data', (data) => {
         stderr += data.toString();
@@ -274,6 +279,11 @@ class PostRecordingAnalyzer {
         '-show_format',
         filePath
       ]);
+
+      // Track the process globally for cleanup
+      if (global.trackProcess) {
+        global.trackProcess(ffprobe, `FFprobe metadata ${path.basename(filePath)}`);
+      }
 
       let stdout = '';
       ffprobe.stdout.on('data', (data) => {

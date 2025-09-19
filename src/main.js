@@ -31,6 +31,46 @@ let smbMountService;
 let healthChecker;
 let store;
 
+// Global process tracking for cleanup
+global.spawnedProcesses = new Set();
+
+// Helper function to track spawned processes
+global.trackProcess = (process, description = 'Unknown process') => {
+  if (process && process.pid) {
+    global.spawnedProcesses.add({ process, description, pid: process.pid });
+    console.log(`📝 Tracking process: ${description} (PID: ${process.pid})`);
+
+    // Auto-remove when process exits
+    process.on('exit', () => {
+      global.spawnedProcesses.forEach(tracked => {
+        if (tracked.pid === process.pid) {
+          global.spawnedProcesses.delete(tracked);
+          console.log(`🗑️ Process exited: ${description} (PID: ${process.pid})`);
+        }
+      });
+    });
+  }
+  return process;
+};
+
+// Helper function to cleanup all tracked processes
+global.cleanupAllProcesses = () => {
+  console.log(`🧹 Cleaning up ${global.spawnedProcesses.size} tracked processes...`);
+
+  for (const tracked of global.spawnedProcesses) {
+    try {
+      if (tracked.process && !tracked.process.killed) {
+        console.log(`🔪 Force killing: ${tracked.description} (PID: ${tracked.pid})`);
+        tracked.process.kill('SIGKILL');
+      }
+    } catch (error) {
+      console.error(`Error killing process ${tracked.pid}:`, error);
+    }
+  }
+
+  global.spawnedProcesses.clear();
+};
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -272,20 +312,83 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Always quit the app when all windows are closed (including macOS)
+  console.log('All windows closed, initiating app quit...');
+  app.quit();
 });
 
-app.on('before-quit', async () => {
-  if (healthChecker) {
-    healthChecker.stop();
+let isQuitting = false;
+
+app.on('before-quit', async (event) => {
+  if (isQuitting) {
+    return; // Already in cleanup process
   }
-  if (audioRecorder) {
-    await audioRecorder.cleanup();
-  }
-  if (database) {
-    await database.close();
+
+  console.log('App quit initiated, starting cleanup...');
+  event.preventDefault(); // Prevent immediate quit
+  isQuitting = true;
+
+  // Set a timeout to force quit if cleanup takes too long
+  const forceQuitTimeout = setTimeout(() => {
+    console.warn('Cleanup timeout reached, force quitting...');
+    if (audioRecorder) {
+      audioRecorder.forceCleanup();
+    }
+    global.cleanupAllProcesses();
+    process.exit(0);
+  }, 5000); // 5 second timeout
+
+  try {
+    // Log active processes before cleanup
+    if (audioRecorder) {
+      const activeProcesses = audioRecorder.getActiveProcesses();
+      if (activeProcesses.length > 0) {
+        console.log(`Found ${activeProcesses.length} active audio processes to clean up:`, activeProcesses);
+      }
+    }
+
+    // Stop health checker
+    if (healthChecker) {
+      console.log('Stopping health checker...');
+      healthChecker.stop();
+    }
+
+    // Clean up audio recorder and its processes
+    if (audioRecorder) {
+      console.log('Cleaning up audio recorder...');
+      await audioRecorder.cleanup();
+      console.log('Audio recorder cleanup completed');
+    }
+
+    // Clean up any other tracked processes (ffmpeg, ffprobe, etc.)
+    global.cleanupAllProcesses();
+
+    // Close database
+    if (database) {
+      console.log('Closing database...');
+      await database.close();
+      console.log('Database closed');
+    }
+
+    clearTimeout(forceQuitTimeout);
+    console.log('Cleanup completed successfully, quitting app...');
+
+    // Force quit after cleanup
+    process.exit(0);
+
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+    clearTimeout(forceQuitTimeout);
+
+    // Force cleanup if normal cleanup fails
+    if (audioRecorder) {
+      audioRecorder.forceCleanup();
+    }
+
+    // Force cleanup all tracked processes
+    global.cleanupAllProcesses();
+
+    process.exit(1);
   }
 });
 

@@ -878,9 +878,11 @@ async function checkFileSize() {
         }
 
         const result = await ipcRenderer.invoke('get-file-growth-status', meetingId);
+        console.log('🔍 SIZE: File growth result:', result);
 
         if (!result.exists) {
-            setFileSizeStatus('no-file', 'No recording file found');
+            const message = result.error || 'No recording file found';
+            setFileSizeStatus('no-file', message);
             return;
         }
 
@@ -900,7 +902,7 @@ async function checkFileSize() {
 
     } catch (error) {
         console.error('❌ SIZE: Error checking file size:', error);
-        setFileSizeStatus('no-file', 'Error checking file');
+        setFileSizeStatus('no-file', `Error: ${error.message || 'Cannot check file size'}`);
     }
 }
 

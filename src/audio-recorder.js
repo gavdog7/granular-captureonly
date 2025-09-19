@@ -11,6 +11,7 @@ class AudioRecorder {
     this.activeRecordings = new Map(); // meetingId -> recording session
     this.binaryPath = path.join(__dirname, 'native', 'audio-capture', '.build', 'release', 'audio-capture');
     this.assetsPath = path.join(__dirname, '..', 'assets'); // Save in project assets folder
+    this.lastStopTime = null; // Track when last recording stopped for audio session management
 
     // Initialize post-recording analyzer
     this.postAnalyzer = new PostRecordingAnalyzer(database, {
@@ -22,17 +23,30 @@ class AudioRecorder {
   }
 
   /**
-   * Start recording for a meeting
+   * Start recording for a meeting with retry mechanism for macOS 26 audio session issues
    * @param {number} meetingId - The meeting ID
+   * @param {number} attempt - Current attempt number (internal use)
    * @returns {Promise<Object>} Recording session info
    */
-  async startRecording(meetingId) {
+  async startRecording(meetingId, attempt = 1) {
     try {
       // Check if already recording for this meeting
       if (this.activeRecordings.has(meetingId)) {
         const existing = this.activeRecordings.get(meetingId);
         if (existing.isRecording) {
           throw new Error('Recording already in progress for this meeting');
+        }
+      }
+
+      // Handle macOS 26 audio session management - add delay if starting too soon
+      if (this.lastStopTime) {
+        const timeSinceLastStop = Date.now() - this.lastStopTime;
+        const minDelay = 1000; // Minimum 1 second between recordings
+
+        if (timeSinceLastStop < minDelay) {
+          const waitTime = minDelay - timeSinceLastStop;
+          console.log(`🎙️ Audio session cleanup: waiting ${waitTime}ms before starting new recording`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
 
@@ -81,11 +95,39 @@ class AudioRecorder {
       this.startDurationTimer(recordingSession);
 
       console.log(`Started recording for meeting ${meetingId}, session ${sessionId}`);
+
+      // Validate recording started successfully after a brief delay
+      setTimeout(async () => {
+        try {
+          await this.validateRecordingStarted(recordingSession, attempt, meetingId);
+        } catch (validationError) {
+          console.error('Recording validation failed, will restart:', validationError);
+          // If validation fails, restart the recording
+          if (attempt <= 3) {
+            try {
+              console.log(`🔄 Restarting recording due to validation failure (attempt ${attempt + 1})`);
+              await this.startRecording(meetingId, attempt + 1);
+            } catch (retryError) {
+              console.error('Failed to restart recording:', retryError);
+            }
+          }
+        }
+      }, 2000); // Check after 2 seconds
+
       return this.getRecordingStatus(meetingId);
 
     } catch (error) {
-      console.error('Error starting recording:', error);
-      throw error;
+      console.error(`Error starting recording (attempt ${attempt}):`, error);
+
+      // Retry logic for macOS 26 audio session issues
+      if (attempt < 6) {
+        const delay = Math.min(500 * Math.pow(2, attempt - 1), 4000); // Exponential backoff: 500ms, 1s, 2s, 4s, 4s, 4s
+        console.log(`🔄 Retrying recording start in ${delay}ms (attempt ${attempt + 1}/6)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.startRecording(meetingId, attempt + 1);
+      }
+
+      throw new Error(`Failed to start recording after 6 attempts: ${error.message}`);
     }
   }
 
@@ -161,6 +203,23 @@ class AudioRecorder {
         recording.process.kill('SIGTERM');
       }
 
+      // Wait for process to fully terminate (macOS 26 audio session cleanup)
+      if (recording.process && !recording.process.killed) {
+        console.log('⏱️ Waiting for audio capture process to terminate...');
+        await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            console.log('⚠️ Audio process termination timeout, proceeding anyway');
+            resolve();
+          }, 3000); // 3 second max wait
+
+          recording.process.on('exit', () => {
+            console.log('✅ Audio capture process terminated cleanly');
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
+      }
+
       // Clear duration timer
       if (recording.durationTimer) {
         clearInterval(recording.durationTimer);
@@ -180,6 +239,10 @@ class AudioRecorder {
 
       // Remove from active recordings
       this.activeRecordings.delete(meetingId);
+
+      // Store last stop time for audio session cleanup tracking
+      this.lastStopTime = Date.now();
+      console.log('🎙️ Audio session marked as stopped for cleanup tracking');
 
       console.log(`Stopped recording for meeting ${meetingId}`);
       return this.getRecordingStatus(meetingId);
@@ -375,7 +438,7 @@ class AudioRecorder {
     process.on('exit', (code) => {
       console.log(`Audio capture process exited with code ${code}`);
       recordingSession.isRecording = false;
-      
+
       if (recordingSession.durationTimer) {
         clearInterval(recordingSession.durationTimer);
       }
@@ -386,6 +449,45 @@ class AudioRecorder {
       recordingSession.error = error.message;
       recordingSession.isRecording = false;
     });
+  }
+
+  /**
+   * Validate that recording started successfully by checking file size growth
+   * @param {Object} recordingSession - The recording session
+   * @param {number} attempt - Current attempt number
+   * @param {number} meetingId - Meeting ID for retry
+   */
+  async validateRecordingStarted(recordingSession, attempt, meetingId) {
+    if (!recordingSession.isRecording) {
+      return; // Recording already stopped
+    }
+
+    try {
+      const fs = require('fs').promises;
+      const stats = await fs.stat(recordingSession.finalPath);
+
+      // Check if file is growing (should be > 1KB after 2 seconds for active recording)
+      if (stats.size < 1024) {
+        console.warn(`⚠️ Recording file unexpectedly small (${stats.size} bytes), may indicate audio session failure`);
+
+        // If this was an early attempt and file is tiny, trigger retry by throwing error
+        if (attempt <= 3 && stats.size < 100) {
+          console.log('🔄 Recording validation failed, will trigger retry mechanism...');
+          try {
+            await this.stopRecording(meetingId, true);
+            // Trigger retry by throwing an error that startRecording can catch
+            throw new Error(`Recording validation failed: file too small (${stats.size} bytes)`);
+          } catch (stopError) {
+            console.error('Error stopping failed recording:', stopError);
+            throw new Error(`Recording validation failed: file too small (${stats.size} bytes)`);
+          }
+        }
+      } else {
+        console.log(`✅ Recording validation passed: file size ${stats.size} bytes`);
+      }
+    } catch (error) {
+      console.warn('Could not validate recording file:', error.message);
+    }
   }
 
   /**

@@ -9,8 +9,16 @@ const AudioRecorder = require('./audio-recorder');
 const UploadService = require('./upload-service');
 const GoogleDriveService = require('./google-drive');
 const { MeetingHealthChecker } = require('./meeting-health-checker');
-const SMBMountService = require('./smb-mount-service');
 const Store = require('electron-store');
+
+// Optional SMB mount service (may not be available in all environments)
+let SMBMountService;
+try {
+  SMBMountService = require('./smb-mount-service');
+} catch (error) {
+  console.log('SMB mount service not available:', error.message);
+  SMBMountService = null;
+}
 const { setupTestDate, disableTestDate, dateOverride } = require('./date-override');
 
 let mainWindow;
@@ -216,13 +224,17 @@ async function initializeApp() {
       console.warn('Google Drive service initialization failed (will retry on first upload):', error.message);
     }
 
-    // Initialize SMB mount service
-    smbMountService = new SMBMountService(store, mainWindow);
-    try {
-      await smbMountService.initialize();
-      console.log('SMB mount service initialized');
-    } catch (error) {
-      console.warn('SMB mount service initialization failed:', error.message);
+    // Initialize SMB mount service (if available)
+    if (SMBMountService) {
+      smbMountService = new SMBMountService(store, mainWindow);
+      try {
+        await smbMountService.initialize();
+        console.log('SMB mount service initialized');
+      } catch (error) {
+        console.warn('SMB mount service initialization failed:', error.message);
+      }
+    } else {
+      console.log('SMB mount service not available - skipping initialization');
     }
     
     // Initialize services with Google Drive support

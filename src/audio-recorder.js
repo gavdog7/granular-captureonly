@@ -2,13 +2,23 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
 const { app } = require('electron');
+const PostRecordingAnalyzer = require('./post-recording-analyzer');
 
 class AudioRecorder {
-  constructor(database) {
+  constructor(database, mainWindow = null) {
     this.database = database;
+    this.mainWindow = mainWindow;
     this.activeRecordings = new Map(); // meetingId -> recording session
     this.binaryPath = path.join(__dirname, 'native', 'audio-capture', '.build', 'release', 'audio-capture');
     this.assetsPath = path.join(__dirname, '..', 'assets'); // Save in project assets folder
+
+    // Initialize post-recording analyzer
+    this.postAnalyzer = new PostRecordingAnalyzer(database, {
+      minDurationForAnalysis: 3600, // 1 hour
+      silenceThreshold: -40,
+      minSilenceDuration: 600, // 10 minutes
+      bufferTime: 120 // 2 minutes buffer
+    });
   }
 
   /**
@@ -164,6 +174,9 @@ class AudioRecorder {
         recording.duration
       );
       console.log(`✅ Database updated for recording session ${recording.sessionId}`);
+
+      // Start post-processing analysis asynchronously (non-blocking)
+      this.startPostProcessing(recording.sessionId, recording.finalPath, recording.duration);
 
       // Remove from active recordings
       this.activeRecordings.delete(meetingId);
@@ -391,11 +404,61 @@ class AudioRecorder {
 
 
   /**
+   * Start post-processing analysis for a completed recording
+   * @param {number} sessionId - Recording session ID
+   * @param {string} filePath - Path to the recording file
+   * @param {number} duration - Recording duration in seconds
+   */
+  startPostProcessing(sessionId, filePath, duration) {
+    // Run asynchronously to not block the UI
+    setImmediate(async () => {
+      try {
+        console.log(`🔍 Starting post-processing analysis for session ${sessionId}`);
+        console.log(`📏 Duration: ${Math.round(duration/3600*100)/100} hours`);
+
+        const result = await this.postAnalyzer.analyzeRecording(sessionId, filePath);
+
+        if (result.silenceDetected) {
+          console.log(`✂️ Recording split completed for session ${sessionId}`);
+          console.log(`💾 Space saved: ${result.spaceSavedMB}MB`);
+          console.log(`⏱️  Meeting duration: ${Math.round(result.meetingDuration/60)} minutes`);
+
+          // Notify UI if available
+          if (this.mainWindow && this.mainWindow.webContents) {
+            this.mainWindow.webContents.send('recording-split', {
+              sessionId,
+              originalSize: result.originalSize,
+              newSize: result.meetingSize,
+              spaceSavedMB: result.spaceSavedMB,
+              meetingDuration: Math.round(result.meetingDuration/60),
+              silenceDuration: Math.round(result.totalSilenceDuration/60)
+            });
+          }
+        } else if (result.analyzed) {
+          console.log(`✅ Post-processing complete - no problematic silence detected in session ${sessionId}`);
+        } else {
+          console.log(`⏭️ Post-processing skipped for session ${sessionId}: ${result.reason}`);
+        }
+      } catch (error) {
+        console.error(`❌ Post-processing failed for session ${sessionId}:`, error);
+
+        // Notify UI of error if available
+        if (this.mainWindow && this.mainWindow.webContents) {
+          this.mainWindow.webContents.send('recording-split-error', {
+            sessionId,
+            error: error.message
+          });
+        }
+      }
+    });
+  }
+
+  /**
    * Clean up all active recordings (for app shutdown)
    */
   async cleanup() {
     console.log('Cleaning up audio recordings...');
-    
+
     for (const [meetingId, recording] of this.activeRecordings.entries()) {
       try {
         await this.stopRecording(meetingId);

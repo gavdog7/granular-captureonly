@@ -984,17 +984,193 @@ class Database {
 
   async getMeetingsNeedingUpload() {
     return await this.all(`
-      SELECT m.* 
+      SELECT m.*
       FROM meetings m
       JOIN recording_sessions rs ON m.id = rs.meeting_id
       WHERE rs.completed = 1
-      AND (m.upload_status IS NULL 
-           OR m.upload_status = 'pending' 
+      AND (m.upload_status IS NULL
+           OR m.upload_status = 'pending'
            OR m.upload_status = 'failed'
            OR m.upload_status = 'no_content')
       GROUP BY m.id
       ORDER BY m.start_time DESC
     `);
+  }
+
+  // Post-recording analysis and splitting methods
+
+  /**
+   * Add columns for tracking split recordings if they don't exist
+   */
+  async addSplitTrackingColumns() {
+    const columns = [
+      'ALTER TABLE recording_sessions ADD COLUMN was_split BOOLEAN DEFAULT 0',
+      'ALTER TABLE recording_sessions ADD COLUMN original_duration REAL',
+      'ALTER TABLE recording_sessions ADD COLUMN split_at_time REAL',
+      'ALTER TABLE recording_sessions ADD COLUMN silence_file_path TEXT',
+      'ALTER TABLE recording_sessions ADD COLUMN space_saved_bytes INTEGER'
+    ];
+
+    for (const sql of columns) {
+      try {
+        await this.run(sql);
+        console.log(`✅ Added column: ${sql.split(' ADD COLUMN ')[1]}`);
+      } catch (error) {
+        if (error.message.includes('duplicate column name')) {
+          // Column already exists, skip
+        } else {
+          console.error('Error adding column:', error);
+        }
+      }
+    }
+  }
+
+  /**
+   * Record that a recording session was split
+   */
+  async recordSplit(sessionId, splitData) {
+    try {
+      // Ensure split tracking columns exist
+      await this.addSplitTrackingColumns();
+
+      await this.run(`
+        UPDATE recording_sessions
+        SET was_split = 1,
+            original_duration = ?,
+            split_at_time = ?,
+            silence_file_path = ?,
+            space_saved_bytes = ?
+        WHERE id = ?
+      `, [
+        splitData.originalDuration,
+        splitData.splitTime,
+        splitData.silencePath,
+        splitData.spaceSaved,
+        sessionId
+      ]);
+
+      console.log(`📝 Database: Recorded split for session ${sessionId}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error recording split in database:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all split recordings with meeting info
+   */
+  async getSplitRecordings() {
+    try {
+      await this.addSplitTrackingColumns();
+
+      return await this.all(`
+        SELECT
+          rs.*,
+          m.title,
+          m.start_time,
+          m.folder_name,
+          ROUND(rs.space_saved_bytes / (1024.0 * 1024.0), 2) as space_saved_mb
+        FROM recording_sessions rs
+        JOIN meetings m ON rs.meeting_id = m.id
+        WHERE rs.was_split = 1
+        ORDER BY rs.started_at DESC
+      `);
+    } catch (error) {
+      console.error('Error getting split recordings:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get total space saved from splits
+   */
+  async getSplitStatistics() {
+    try {
+      await this.addSplitTrackingColumns();
+
+      const stats = await this.get(`
+        SELECT
+          COUNT(*) as total_splits,
+          SUM(space_saved_bytes) as total_space_saved_bytes,
+          AVG(space_saved_bytes) as avg_space_saved_bytes,
+          SUM(original_duration - split_at_time) as total_silence_hours
+        FROM recording_sessions
+        WHERE was_split = 1
+      `);
+
+      if (stats) {
+        return {
+          totalSplits: stats.total_splits || 0,
+          totalSpaceSavedMB: Math.round((stats.total_space_saved_bytes || 0) / (1024 * 1024)),
+          avgSpaceSavedMB: Math.round((stats.avg_space_saved_bytes || 0) / (1024 * 1024)),
+          totalSilenceHours: Math.round((stats.total_silence_hours || 0) / 3600 * 10) / 10
+        };
+      }
+
+      return {
+        totalSplits: 0,
+        totalSpaceSavedMB: 0,
+        avgSpaceSavedMB: 0,
+        totalSilenceHours: 0
+      };
+    } catch (error) {
+      console.error('Error getting split statistics:', error);
+      return {
+        totalSplits: 0,
+        totalSpaceSavedMB: 0,
+        avgSpaceSavedMB: 0,
+        totalSilenceHours: 0
+      };
+    }
+  }
+
+  /**
+   * Check if a recording session was split
+   */
+  async isRecordingSplit(sessionId) {
+    try {
+      await this.addSplitTrackingColumns();
+
+      const result = await this.get(
+        'SELECT was_split, silence_file_path FROM recording_sessions WHERE id = ?',
+        [sessionId]
+      );
+
+      return {
+        isSplit: result ? !!result.was_split : false,
+        silenceFilePath: result ? result.silence_file_path : null
+      };
+    } catch (error) {
+      console.error('Error checking if recording is split:', error);
+      return { isSplit: false, silenceFilePath: null };
+    }
+  }
+
+  /**
+   * Get recordings that might need post-processing (over 1 hour, not yet split)
+   */
+  async getRecordingsNeedingPostProcessing() {
+    try {
+      await this.addSplitTrackingColumns();
+
+      return await this.all(`
+        SELECT
+          rs.*,
+          m.title,
+          m.start_time,
+          m.folder_name
+        FROM recording_sessions rs
+        JOIN meetings m ON rs.meeting_id = m.id
+        WHERE rs.completed = 1
+        AND rs.duration > 3600
+        AND (rs.was_split IS NULL OR rs.was_split = 0)
+        ORDER BY rs.started_at DESC
+      `);
+    } catch (error) {
+      console.error('Error getting recordings needing post-processing:', error);
+      return [];
+    }
   }
 }
 

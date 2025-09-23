@@ -973,15 +973,12 @@ ipcMain.handle('get-recording-sessions', async (event, meetingId) => {
   }
 });
 
-// File growth monitoring IPC handler
+// File size monitoring IPC handler
 ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
   try {
-    console.log(`🔍 GROWTH: Checking file growth for meeting ${meetingId}`);
-
     // Get meeting info to find file path
     const meeting = await database.getMeetingById(meetingId);
     if (!meeting) {
-      console.log(`⚠️ GROWTH: Meeting ${meetingId} not found`);
       return { exists: false, error: 'Meeting not found' };
     }
 
@@ -992,17 +989,14 @@ ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
     );
 
     if (recordings.length === 0) {
-      console.log(`📁 GROWTH: No recording sessions for meeting ${meetingId}`);
       return { exists: false, isActive: false };
     }
 
     const recording = recordings[0];
     // Use final_path primarily, fall back to temp_path for old recordings
     const filePath = recording.final_path || recording.temp_path;
-    console.log(`📂 GROWTH: Checking file: ${filePath}`);
 
     if (!filePath) {
-      console.log(`❌ GROWTH: No file path available for meeting ${meetingId}`);
       return { exists: false, error: 'No file path available' };
     }
 
@@ -1012,8 +1006,6 @@ ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
       const currentSize = stats.size;
       const currentTime = Date.now();
 
-      console.log(`📊 GROWTH: File size: ${currentSize} bytes at ${new Date(currentTime).toLocaleTimeString()}`);
-
       return {
         exists: true,
         isActive: true,
@@ -1022,11 +1014,9 @@ ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
         path: filePath
       };
     } catch (fileError) {
-      console.log(`❌ GROWTH: File not accessible: ${fileError.message}`);
       return { exists: false, error: fileError.message };
     }
   } catch (error) {
-    console.error('❌ GROWTH: Error checking file growth:', error);
     return { exists: false, error: error.message };
   }
 });

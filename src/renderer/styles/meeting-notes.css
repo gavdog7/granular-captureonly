@@ -173,19 +173,19 @@ body {
     opacity: 0.7;
 }
 
-/* File Growth Status Indicator */
+/* File Size Status Indicator */
 #fileGrowthIndicator .indicator-circle {
     border-color: #a0a0a0; /* Default: gray when not monitoring */
     cursor: default;
 }
 
 #fileGrowthIndicator.large-file .indicator-circle {
-    border-color: #90d4a0; /* Green: file >= 500KB */
+    border-color: #90d4a0; /* Green: file >= 50KB */
     background: rgba(144, 212, 160, 0.2);
 }
 
 #fileGrowthIndicator.small-file .indicator-circle {
-    border-color: #e8a0a0; /* Red: file < 500KB */
+    border-color: #e8a0a0; /* Red: file < 50KB */
     background: rgba(232, 160, 160, 0.3);
     opacity: 0.8;
 }

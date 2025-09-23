@@ -725,7 +725,6 @@ async function initializeRecording() {
         startRecordingStatusUpdates();
 
         // Initialize file size monitoring
-        console.log('🔍 NOTES: Starting file size monitoring...');
         await initializeFileSizeMonitoring();
 
     } catch (error) {
@@ -857,8 +856,6 @@ function stopRecordingStatusUpdates() {
 
 // Initialize file size monitoring
 async function initializeFileSizeMonitoring() {
-    console.log('🔍 SIZE: Initializing file size monitoring');
-
     // Set up periodic file size checks every 2 seconds
     fileSizeInterval = setInterval(async () => {
         await checkFileSize();
@@ -873,36 +870,29 @@ async function checkFileSize() {
     try {
         const meetingId = parseInt(currentMeetingId);
         if (isNaN(meetingId)) {
-            console.log('⚠️ SIZE: Invalid meeting ID, skipping check');
             return;
         }
 
         const result = await ipcRenderer.invoke('get-file-growth-status', meetingId);
-        console.log('🔍 SIZE: File growth result:', result);
 
         if (!result.exists) {
-            const message = result.error || 'No recording file found';
-            setFileSizeStatus('no-file', message);
+            setFileSizeStatus('no-file', 'No recording');
             return;
         }
 
         const currentSize = result.size;
-        const sizeInKB = currentSize / 1024;
-        const sizeThreshold = 500; // 500KB threshold
+        const sizeThreshold = 50; // 50KB threshold
 
         if (currentSize < sizeThreshold * 1024) {
-            // File is smaller than 500KB - show red
-            const message = `Recording file: ${Math.round(sizeInKB)}KB (< ${sizeThreshold}KB)`;
-            setFileSizeStatus('small-file', message);
+            // File is smaller than 50KB - show red
+            setFileSizeStatus('small-file', 'Recording active');
         } else {
-            // File is 500KB or larger - show green
-            const message = `Recording file: ${Math.round(sizeInKB)}KB`;
-            setFileSizeStatus('large-file', message);
+            // File is 50KB or larger - show green
+            setFileSizeStatus('large-file', 'Recording active');
         }
 
     } catch (error) {
-        console.error('❌ SIZE: Error checking file size:', error);
-        setFileSizeStatus('no-file', `Error: ${error.message || 'Cannot check file size'}`);
+        setFileSizeStatus('no-file', 'No recording');
     }
 }
 
@@ -910,22 +900,21 @@ async function checkFileSize() {
 function setFileSizeStatus(status, message) {
     const indicator = document.getElementById('fileGrowthIndicator');
     if (!indicator) {
-        console.error('❌ SIZE: File size indicator element not found!');
         return;
     }
 
     indicator.className = `status-indicator ${status}`;
 
-    // Set enhanced tooltip based on status
+    // Set simple tooltip based on status
     const defaultTooltips = {
-        'small-file': 'Recording file is small (< 500KB)',
-        'large-file': 'Recording file size OK',
-        'no-file': 'No recording file found',
-        '': 'File size monitoring disabled'
+        'small-file': 'Recording starting',
+        'large-file': 'Recording active',
+        'no-file': 'No recording',
+        '': 'Recording status'
     };
 
     // Use custom message if provided, otherwise use default
-    indicator.title = message || defaultTooltips[status] || 'File Size Status';
+    indicator.title = message || defaultTooltips[status] || 'Recording status';
 }
 
 // Stop file size monitoring
@@ -933,7 +922,6 @@ function stopFileSizeMonitoring() {
     if (fileSizeInterval) {
         clearInterval(fileSizeInterval);
         fileSizeInterval = null;
-        console.log('🛑 SIZE: File size monitoring stopped');
     }
 }
 

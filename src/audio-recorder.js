@@ -29,11 +29,13 @@ class AudioRecorder {
    * @returns {Promise<Object>} Recording session info
    */
   async startRecording(meetingId, attempt = 1) {
+    console.log(`🎤 [AUDIO DEBUG] Starting recording for meeting ${meetingId}, attempt ${attempt}`);
     try {
       // Check if already recording for this meeting
       if (this.activeRecordings.has(meetingId)) {
         const existing = this.activeRecordings.get(meetingId);
         if (existing.isRecording) {
+          console.log(`⚠️ [AUDIO DEBUG] Recording already in progress for meeting ${meetingId}`);
           throw new Error('Recording already in progress for this meeting');
         }
       }
@@ -68,6 +70,7 @@ class AudioRecorder {
       const sessionId = sessionResult.lastID;
 
       // Start native audio capture process
+      console.log(`🎯 [AUDIO DEBUG] Starting capture process with path: ${finalPath}`);
       const captureProcess = await this.startCaptureProcess(finalPath);
 
       // Create recording session object
@@ -94,14 +97,15 @@ class AudioRecorder {
       // Start duration timer
       this.startDurationTimer(recordingSession);
 
-      console.log(`Started recording for meeting ${meetingId}, session ${sessionId}`);
+      console.log(`✅ [AUDIO DEBUG] Recording started for meeting ${meetingId}, session ${sessionId}`);
+      console.log(`📁 [AUDIO DEBUG] Recording to file: ${finalPath}`);
 
       // Validate recording started successfully after a brief delay
       setTimeout(async () => {
         try {
           await this.validateRecordingStarted(recordingSession, attempt, meetingId);
         } catch (validationError) {
-          console.error('Recording validation failed, will restart:', validationError);
+          console.error('🚨 [AUDIO DEBUG] Recording validation failed, will restart:', validationError);
           // If validation fails, restart the recording
           if (attempt <= 3) {
             try {
@@ -197,15 +201,18 @@ class AudioRecorder {
       throw new Error('No active recording to stop');
     }
 
+    console.log(`🛑 [AUDIO DEBUG] Stopping recording for meeting ${meetingId}`);
+
     try {
       // Stop the native process
       if (recording.process && !recording.process.killed) {
+        console.log(`💫 [AUDIO DEBUG] Sending SIGTERM to process ${recording.process.pid}`);
         recording.process.kill('SIGTERM');
       }
 
       // Wait for process to fully terminate (macOS 26 audio session cleanup)
       if (recording.process && !recording.process.killed) {
-        console.log('⏱️ Waiting for audio capture process to terminate...');
+        console.log('⏱️ [AUDIO DEBUG] Waiting for audio capture process to terminate...');
         await new Promise((resolve) => {
           const timeout = setTimeout(() => {
             console.log('⚠️ Audio process termination timeout, proceeding anyway');
@@ -225,14 +232,33 @@ class AudioRecorder {
         clearInterval(recording.durationTimer);
       }
 
+      // Get final file stats before updating database
+      const fs = require('fs').promises;
+      const fileExists = await fs.access(recording.finalPath).then(() => true).catch(() => false);
+      if (fileExists) {
+        const stats = await fs.stat(recording.finalPath);
+        const durationMinutes = Math.floor(recording.duration / 60);
+        const expectedSize = durationMinutes * 240 * 1024; // ~240KB per minute at 32kbps
+        console.log(`📁 [AUDIO DEBUG] Final file stats:`);
+        console.log(`  - Path: ${recording.finalPath}`);
+        console.log(`  - Size: ${stats.size} bytes (${Math.round(stats.size / 1024)}KB)`);
+        console.log(`  - Duration: ${recording.duration} seconds (${durationMinutes} minutes)`);
+        console.log(`  - Expected size: ~${Math.round(expectedSize / 1024)}KB`);
+        if (stats.size < expectedSize * 0.1) {
+          console.error(`🚨 [AUDIO DEBUG] File size is way too small! Only ${Math.round(stats.size * 100 / expectedSize)}% of expected size`);
+        }
+      } else {
+        console.warn(`❌ [AUDIO DEBUG] Recording file not found at ${recording.finalPath}`);
+      }
+
       // Update database (file is already in final location)
-      console.log(`📝 Updating database for recording session ${recording.sessionId}, path: ${recording.finalPath}`);
+      console.log(`📝 [AUDIO DEBUG] Updating database for recording session ${recording.sessionId}, path: ${recording.finalPath}`);
       await this.database.endRecordingSession(
         recording.sessionId,
         recording.finalPath,
         recording.duration
       );
-      console.log(`✅ Database updated for recording session ${recording.sessionId}`);
+      console.log(`✅ [AUDIO DEBUG] Database updated for recording session ${recording.sessionId}`);
 
       // Start post-processing analysis asynchronously (non-blocking)
       this.startPostProcessing(recording.sessionId, recording.finalPath, recording.duration);
@@ -242,7 +268,7 @@ class AudioRecorder {
 
       // Store last stop time for audio session cleanup tracking
       this.lastStopTime = Date.now();
-      console.log('🎙️ Audio session marked as stopped for cleanup tracking');
+      console.log('🎙️ [AUDIO DEBUG] Audio session marked as stopped for cleanup tracking');
 
       console.log(`Stopped recording for meeting ${meetingId}`);
       return this.getRecordingStatus(meetingId);
@@ -413,12 +439,18 @@ class AudioRecorder {
 
       // Log stdout from the binary
       process.stdout.on('data', (data) => {
-        console.log(`Audio capture stdout: ${data.toString().trim()}`);
+        const output = data.toString().trim();
+        if (output) {
+          console.log(`📢 [AUDIO CAPTURE OUTPUT]: ${output}`);
+        }
       });
 
       // Log stderr from the binary
       process.stderr.on('data', (data) => {
-        console.error(`Audio capture stderr: ${data.toString().trim()}`);
+        const error = data.toString().trim();
+        if (error) {
+          console.error(`⚠️ [AUDIO CAPTURE STDERR]: ${error}`);
+        }
       });
 
       process.on('error', (error) => {
@@ -427,7 +459,8 @@ class AudioRecorder {
       });
 
       process.on('spawn', () => {
-        console.log(`Audio capture process spawned with PID: ${process.pid}`);
+        console.log(`🚀 [AUDIO DEBUG] Audio capture process spawned with PID: ${process.pid}`);
+        console.log(`📋 [AUDIO DEBUG] Process command: ${this.binaryPath} start --output ${outputPath} --bitrate 32000`);
         resolve(process);
       });
     });
@@ -441,7 +474,7 @@ class AudioRecorder {
     const { process } = recordingSession;
 
     process.on('exit', (code) => {
-      console.log(`Audio capture process exited with code ${code}`);
+      console.log(`🛑 [AUDIO DEBUG] Audio capture process exited with code ${code} for meeting ${recordingSession.meetingId}`);
       recordingSession.isRecording = false;
 
       if (recordingSession.durationTimer) {
@@ -450,7 +483,7 @@ class AudioRecorder {
     });
 
     process.on('error', (error) => {
-      console.error('Audio capture process error:', error);
+      console.error(`❌ [AUDIO DEBUG] Audio capture process error for meeting ${recordingSession.meetingId}:`, error);
       recordingSession.error = error.message;
       recordingSession.isRecording = false;
     });
@@ -464,16 +497,18 @@ class AudioRecorder {
    */
   async validateRecordingStarted(recordingSession, attempt, meetingId) {
     if (!recordingSession.isRecording) {
+      console.log(`⏹️ [AUDIO DEBUG] Recording already stopped, skipping validation`);
       return; // Recording already stopped
     }
 
     try {
       const fs = require('fs').promises;
       const stats = await fs.stat(recordingSession.finalPath);
+      console.log(`📊 [AUDIO DEBUG] File validation - Size after 2 seconds: ${stats.size} bytes`);
 
       // Check if file is growing (should be > 1KB after 2 seconds for active recording)
       if (stats.size < 1024) {
-        console.warn(`⚠️ Recording file unexpectedly small (${stats.size} bytes), may indicate audio session failure`);
+        console.warn(`⚠️ [AUDIO DEBUG] Recording file unexpectedly small (${stats.size} bytes), may indicate audio capture failure`);
 
         // If this was an early attempt and file is tiny, trigger retry by throwing error
         if (attempt <= 3 && stats.size < 100) {
@@ -488,10 +523,10 @@ class AudioRecorder {
           }
         }
       } else {
-        console.log(`✅ Recording validation passed: file size ${stats.size} bytes`);
+        console.log(`✅ [AUDIO DEBUG] Recording validation passed: file size ${stats.size} bytes, file is growing normally`);
       }
     } catch (error) {
-      console.warn('Could not validate recording file:', error.message);
+      console.warn(`❌ [AUDIO DEBUG] Could not validate recording file: ${error.message}`);
     }
   }
 
@@ -500,11 +535,42 @@ class AudioRecorder {
    * @param {Object} recordingSession - Recording session object
    */
   startDurationTimer(recordingSession) {
-    recordingSession.durationTimer = setInterval(() => {
+    let lastFileSize = 0;
+    let stagnantChecks = 0;
+
+    recordingSession.durationTimer = setInterval(async () => {
       if (recordingSession.isRecording && !recordingSession.isPaused) {
         recordingSession.duration = Math.floor(
           (new Date() - recordingSession.startTime) / 1000
         );
+
+        // Monitor file size growth every 10 seconds
+        if (recordingSession.duration > 0 && recordingSession.duration % 10 === 0) {
+          try {
+            const fs = require('fs').promises;
+            const stats = await fs.stat(recordingSession.finalPath);
+            const currentSize = stats.size;
+            const sizeDiff = currentSize - lastFileSize;
+            const expectedBytesPerSecond = 4000; // ~32kbps = 4KB/s
+            const expectedGrowth = expectedBytesPerSecond * 10;
+
+            console.log(`📊 [AUDIO MONITOR] Meeting ${recordingSession.meetingId} - Duration: ${recordingSession.duration}s, File size: ${currentSize} bytes, Growth: ${sizeDiff} bytes (expected: ~${expectedGrowth} bytes)`);
+
+            if (lastFileSize > 0 && sizeDiff < 100) {
+              stagnantChecks++;
+              console.warn(`⚠️ [AUDIO MONITOR] File not growing! Stagnant for ${stagnantChecks * 10} seconds`);
+              if (stagnantChecks >= 3) {
+                console.error(`🚨 [AUDIO MONITOR] File has not grown for 30+ seconds - likely no audio being captured!`);
+              }
+            } else {
+              stagnantChecks = 0;
+            }
+
+            lastFileSize = currentSize;
+          } catch (error) {
+            console.error(`❌ [AUDIO MONITOR] Error checking file size: ${error.message}`);
+          }
+        }
       }
     }, 1000);
   }

@@ -4,6 +4,8 @@ const fs = require('fs').promises;
 const { app } = require('electron');
 const PostRecordingAnalyzer = require('./post-recording-analyzer');
 const { getLocalDateString } = require('./utils/date-utils');
+const audioDebug = require('./utils/audio-debug');
+const AudioDiagnostics = require('./utils/audio-diagnostics');
 
 class AudioRecorder {
   constructor(database, mainWindow = null) {
@@ -21,6 +23,13 @@ class AudioRecorder {
       minSilenceDuration: 600, // 10 minutes
       bufferTime: 120 // 2 minutes buffer
     });
+
+    // Initialize diagnostics
+    this.diagnostics = new AudioDiagnostics(this.binaryPath);
+
+    // Log audio configuration on startup
+    audioDebug.logAudioConfiguration();
+    audioDebug.logAudioDevices();
   }
 
   /**
@@ -61,10 +70,17 @@ class AudioRecorder {
 
       // Create recording directory
       const recordingDir = await this.createRecordingDirectory(meeting);
-      
+      audioDebug.logFileIO('Created recording directory', { path: recordingDir });
+
+      // Run pre-recording diagnostics
+      if (attempt === 1) {
+        await this.diagnostics.runPreRecordingDiagnostics(recordingDir);
+      }
+
       // Generate unique filename with Opus extension
       const filename = this.generateFilename(meetingId);
       const finalPath = path.join(recordingDir, `${filename}.opus`);
+      audioDebug.logFileIO('Generated recording path', { filename, finalPath });
 
       // Create recording session in database
       const sessionResult = await this.database.startRecordingSession(meetingId, finalPath);
@@ -559,11 +575,30 @@ class AudioRecorder {
 
             console.log(`📊 [AUDIO MONITOR] Meeting ${recordingSession.meetingId} - Duration: ${recordingSession.duration}s, File size: ${currentSize} bytes, Growth: ${sizeDiff} bytes (expected: ~${expectedGrowth} bytes)`);
 
+            audioDebug.logFileIO('File growth monitoring', {
+              meetingId: recordingSession.meetingId,
+              duration: recordingSession.duration,
+              currentSize,
+              growthInLast10s: sizeDiff,
+              expectedGrowth,
+              growthRate: `${((sizeDiff / expectedGrowth) * 100).toFixed(1)}%`
+            });
+
             if (lastFileSize > 0 && sizeDiff < 100) {
               stagnantChecks++;
               console.warn(`⚠️ [AUDIO MONITOR] File not growing! Stagnant for ${stagnantChecks * 10} seconds`);
+              audioDebug.logValidation('WARNING: File growth stagnant', {
+                stagnantDuration: `${stagnantChecks * 10} seconds`,
+                lastSize: lastFileSize,
+                currentSize,
+                growth: sizeDiff
+              });
               if (stagnantChecks >= 3) {
                 console.error(`🚨 [AUDIO MONITOR] File has not grown for 30+ seconds - likely no audio being captured!`);
+                audioDebug.logValidation('CRITICAL: No file growth detected', {
+                  stagnantDuration: '30+ seconds',
+                  action: 'Audio capture may have failed'
+                });
               }
             } else {
               stagnantChecks = 0;

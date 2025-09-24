@@ -11,6 +11,7 @@ const GoogleDriveService = require('./google-drive');
 const { MeetingHealthChecker } = require('./meeting-health-checker');
 const Store = require('electron-store');
 const { getLocalDateString } = require('./utils/date-utils');
+const audioDebug = require('./utils/audio-debug');
 
 // Optional SMB mount service (may not be available in all environments)
 let SMBMountService;
@@ -226,15 +227,29 @@ async function initializeApp() {
     if (process.platform === 'darwin') {
       const microphonePermission = systemPreferences.getMediaAccessStatus('microphone');
       console.log('Microphone permission status:', microphonePermission);
-      
+      audioDebug.logValidation('Microphone permission check', {
+        status: microphonePermission,
+        platform: process.platform
+      });
+
       if (microphonePermission !== 'granted') {
         console.log('Requesting microphone permission...');
+        audioDebug.logLifecycle('Requesting microphone permission from user');
         try {
           const granted = await systemPreferences.askForMediaAccess('microphone');
           console.log('Microphone permission granted:', granted);
+          audioDebug.logValidation('Microphone permission result', {
+            granted,
+            finalStatus: granted ? 'granted' : 'denied'
+          });
         } catch (error) {
           console.error('Error requesting microphone permission:', error);
+          audioDebug.logValidation('ERROR: Microphone permission request failed', {
+            error: error.message
+          });
         }
+      } else {
+        audioDebug.logValidation('Microphone permission already granted');
       }
     }
     
@@ -861,17 +876,38 @@ ipcMain.handle('start-recording', async (event, meetingId) => {
     if (!audioRecorder) {
       throw new Error('Audio recorder not initialized');
     }
-    
+
     // Validate meeting ID
     if (!meetingId || isNaN(meetingId)) {
       throw new Error(`Cannot start recording for invalid meeting ID: ${meetingId}`);
     }
-    
+
+    // Additional permission check before starting recording
+    if (process.platform === 'darwin') {
+      const currentPermission = systemPreferences.getMediaAccessStatus('microphone');
+      audioDebug.logValidation('Pre-recording permission check', {
+        meetingId,
+        microphoneStatus: currentPermission
+      });
+
+      if (currentPermission !== 'granted') {
+        audioDebug.logValidation('ERROR: Microphone permission not granted for recording', {
+          meetingId,
+          status: currentPermission
+        });
+        throw new Error(`Microphone permission required but status is: ${currentPermission}`);
+      }
+    }
+
     const result = await audioRecorder.startRecording(meetingId);
     console.log(`Recording started for meeting ${meetingId}`);
     return result;
   } catch (error) {
     console.error('Error starting recording:', error);
+    audioDebug.logValidation('ERROR: Failed to start recording', {
+      meetingId,
+      error: error.message
+    });
     throw error;
   }
 });
@@ -974,7 +1010,60 @@ ipcMain.handle('get-recording-sessions', async (event, meetingId) => {
   }
 });
 
-// File size monitoring IPC handler
+// Helper function to reconstruct current path based on current folder name
+async function reconstructCurrentPath(meeting, originalPath) {
+  if (!originalPath || !meeting.folder_name) return null;
+
+  try {
+    // Extract filename from original path
+    const fileName = path.basename(originalPath);
+
+    // Reconstruct path with current folder name
+    const assetsPath = path.join(__dirname, '..', 'assets');
+    const dateStr = getLocalDateString(meeting.start_time);
+    const currentPath = path.join(assetsPath, dateStr, meeting.folder_name, fileName);
+
+    return currentPath;
+  } catch (error) {
+    console.error('Error reconstructing current path:', error);
+    return null;
+  }
+}
+
+// Helper function to search for recording file in current meeting folder
+async function findFileInMeetingFolder(meeting) {
+  try {
+    const assetsPath = path.join(__dirname, '..', 'assets');
+    const dateStr = getLocalDateString(meeting.start_time);
+    const folderPath = path.join(assetsPath, dateStr, meeting.folder_name);
+
+    // List all .opus files in the folder
+    const files = await fs.readdir(folderPath);
+    const opusFiles = files.filter(file => file.endsWith('.opus'));
+
+    if (opusFiles.length === 0) return null;
+
+    // Return the most recently modified .opus file
+    let newestFile = null;
+    let newestTime = 0;
+
+    for (const file of opusFiles) {
+      const filePath = path.join(folderPath, file);
+      const stats = await fs.stat(filePath);
+      if (stats.mtime.getTime() > newestTime) {
+        newestTime = stats.mtime.getTime();
+        newestFile = filePath;
+      }
+    }
+
+    return newestFile;
+  } catch (error) {
+    console.error('Error searching for file in meeting folder:', error);
+    return null;
+  }
+}
+
+// File size monitoring IPC handler with enhanced path resolution
 ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
   try {
     // Get meeting info to find file path
@@ -985,7 +1074,7 @@ ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
 
     // Get the most recent recording session (active or just completed)
     const recordings = await database.all(
-      'SELECT temp_path, final_path, completed FROM recording_sessions WHERE meeting_id = ? ORDER BY started_at DESC LIMIT 1',
+      'SELECT id, temp_path, final_path, completed FROM recording_sessions WHERE meeting_id = ? ORDER BY started_at DESC LIMIT 1',
       [meetingId]
     );
 
@@ -994,30 +1083,74 @@ ipcMain.handle('get-file-growth-status', async (event, meetingId) => {
     }
 
     const recording = recordings[0];
-    // Use final_path primarily, fall back to temp_path for old recordings
-    const filePath = recording.final_path || recording.temp_path;
+    const originalPath = recording.final_path || recording.temp_path;
 
-    if (!filePath) {
+    if (!originalPath) {
       return { exists: false, error: 'No file path available' };
     }
 
-    // Check if file exists and get size
-    try {
-      const stats = await fs.stat(filePath);
-      const currentSize = stats.size;
-      const currentTime = Date.now();
+    // Try multiple path resolution strategies
+    const pathsToTry = [
+      originalPath, // Original database path
+      await reconstructCurrentPath(meeting, originalPath), // Reconstructed current path
+      await findFileInMeetingFolder(meeting) // Search in current meeting folder
+    ].filter(path => path); // Remove null/undefined paths
 
-      return {
-        exists: true,
-        isActive: true,
-        size: currentSize,
-        timestamp: currentTime,
-        path: filePath
-      };
-    } catch (fileError) {
-      return { exists: false, error: fileError.message };
+    console.log(`🔍 [FILE MONITORING] Trying ${pathsToTry.length} paths for meeting ${meetingId}:`);
+    pathsToTry.forEach((path, index) => {
+      console.log(`  ${index + 1}. ${path}`);
+    });
+
+    // Log path resolution attempt
+    audioDebug.logPathResolution(meetingId, pathsToTry);
+
+    for (const filePath of pathsToTry) {
+      try {
+        console.log(`🔍 [FILE MONITORING] Checking path: ${filePath}`);
+        const stats = await fs.stat(filePath);
+        const currentSize = stats.size;
+        const currentTime = Date.now();
+        console.log(`✅ [FILE MONITORING] Found file at: ${filePath} (${currentSize} bytes)`);
+
+        // If we found the file at a different path, update the database
+        if (filePath !== originalPath) {
+          try {
+            await database.run(
+              'UPDATE recording_sessions SET final_path = ? WHERE id = ?',
+              [filePath, recording.id]
+            );
+            console.log(`✅ [FILE MONITORING] Updated recording path from ${originalPath} to ${filePath}`);
+            audioDebug.logPathUpdate(recording.id, originalPath, filePath, 'folder rename detection');
+          } catch (updateError) {
+            console.error('Error updating recording path:', updateError);
+            // Continue anyway since we found the file
+          }
+        }
+
+        // Log successful path resolution
+        audioDebug.logPathResolution(meetingId, pathsToTry, filePath);
+
+        return {
+          exists: true,
+          isActive: true,
+          size: currentSize,
+          timestamp: currentTime,
+          path: filePath
+        };
+      } catch (fileError) {
+        console.log(`❌ [FILE MONITORING] File not found at: ${filePath} (${fileError.message})`);
+        // File not found at this path, try next one
+        continue;
+      }
     }
+
+    // No file found at any path
+    console.warn(`⚠️ [FILE MONITORING] File not found at any expected location for meeting ${meetingId}`);
+    audioDebug.logPathResolution(meetingId, pathsToTry, null);
+    return { exists: false, error: 'File not found at any expected location' };
+
   } catch (error) {
+    console.error('Error in get-file-growth-status:', error);
     return { exists: false, error: error.message };
   }
 });

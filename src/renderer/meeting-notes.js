@@ -66,7 +66,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize recording functionality
     await initializeRecording();
     console.log('Recording initialized');
-    
+
+    // Initialize file size display
+    updateFileSizeDisplay(null);
+
     // Initialize markdown export manager (temporarily disabled to fix loading issue)
     // if (window.markdownExportManager) {
     //     window.markdownExportManager.initialize(currentMeetingId);
@@ -870,6 +873,7 @@ async function checkFileSize() {
     try {
         const meetingId = parseInt(currentMeetingId);
         if (isNaN(meetingId)) {
+            updateFileSizeDisplay(null);
             return;
         }
 
@@ -877,11 +881,15 @@ async function checkFileSize() {
 
         if (!result.exists) {
             setFileSizeStatus('no-file', 'No recording');
+            updateFileSizeDisplay(null);
             return;
         }
 
         const currentSize = result.size;
         const sizeThreshold = 50; // 50KB threshold
+
+        // Update the file size display
+        updateFileSizeDisplay(currentSize);
 
         if (currentSize < sizeThreshold * 1024) {
             // File is smaller than 50KB - show red
@@ -893,6 +901,7 @@ async function checkFileSize() {
 
     } catch (error) {
         setFileSizeStatus('no-file', 'No recording');
+        updateFileSizeDisplay(null);
     }
 }
 
@@ -917,12 +926,44 @@ function setFileSizeStatus(status, message) {
     indicator.title = message || defaultTooltips[status] || 'Recording status';
 }
 
+// Update file size display
+function updateFileSizeDisplay(sizeInBytes) {
+    const fileSizeElement = document.getElementById('fileSizeIndicator');
+    if (!fileSizeElement) {
+        return;
+    }
+
+    if (sizeInBytes === null || sizeInBytes === undefined || sizeInBytes <= 0) {
+        fileSizeElement.textContent = '--';
+        return;
+    }
+
+    // Convert bytes to MB with 1 decimal place
+    const sizeInMB = sizeInBytes / (1024 * 1024);
+
+    if (sizeInMB >= 1000) {
+        // Show as GB for very large files (1GB+)
+        const sizeInGB = sizeInMB / 1024;
+        fileSizeElement.textContent = sizeInGB.toFixed(1) + 'GB';
+    } else if (sizeInMB >= 0.1) {
+        // Show as MB for files 0.1MB and larger
+        fileSizeElement.textContent = sizeInMB.toFixed(1) + 'MB';
+    } else {
+        // Show as KB for very small files
+        const sizeInKB = sizeInBytes / 1024;
+        fileSizeElement.textContent = Math.max(0.1, sizeInKB).toFixed(1) + 'KB';
+    }
+}
+
 // Stop file size monitoring
 function stopFileSizeMonitoring() {
     if (fileSizeInterval) {
         clearInterval(fileSizeInterval);
         fileSizeInterval = null;
     }
+
+    // Reset file size display when monitoring stops
+    updateFileSizeDisplay(null);
 }
 
 // Format duration in seconds to MM:SS format

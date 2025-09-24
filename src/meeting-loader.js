@@ -12,28 +12,23 @@ class MeetingLoader {
     this.cachedMeetings = [];
   }
 
-  async loadTodaysMeetings() {
+  async loadSixWeeksMeetings() {
     const today = dateOverride.today();
 
-    // Check if we already have meetings for today
-    const existingMeetings = await this.database.getTodaysMeetings();
+    // Always scrape Excel for fresh data (no caching logic)
+    const sixWeeksMeetings = await this.loadMeetingsFromExcel();
 
-    if (existingMeetings.length > 0) {
-      // We have existing meetings for today - use them without re-scraping
-      this.cachedMeetings = existingMeetings;
-      console.log(`Using existing ${existingMeetings.length} meetings for today (no re-scraping)`);
+    // Sync with database - replace existing meetings for 6 weeks
+    await this.syncSixWeeksMeetingsToDatabase(sixWeeksMeetings);
 
-      // Update calendar sync date even when using cached meetings
-      if (this.store) {
-        this.store.set('lastCalendarSyncDate', today);
-        console.log('📅 Updated calendar sync date to', today, '(from cached meetings)');
-      }
-
-      return existingMeetings;
+    // Update last sync timestamp for visual indicator
+    if (this.store) {
+      this.store.set('lastCalendarSyncDate', today);
+      this.store.set('lastCalendarSyncTimestamp', new Date().toISOString());
+      console.log('📅 Updated calendar sync date to', today);
     }
 
-    // No existing meetings - scrape from Excel (first time today)
-    return await this.loadMeetingsFromExcel();
+    return sixWeeksMeetings;
   }
 
   async loadMeetingsFromExcel() {
@@ -53,42 +48,60 @@ class MeetingLoader {
     try {
       const workbook = XLSX.readFile(excelFilePath);
       const meetings = await this.parseCalendarManagementLog(workbook);
-      const today = dateOverride.today();
-      
-      const todaysMeetings = meetings.filter(meeting => {
-        const meetingDate = new Date(meeting.startTime).toISOString().split('T')[0];
-        return meetingDate === today;
-      });
+      const today = new Date(dateOverride.today());
+      const sixWeeksFromNow = new Date(today);
+      sixWeeksFromNow.setDate(sixWeeksFromNow.getDate() + 42); // 6 weeks = 42 days
 
-      // For initial load, clear and insert all meetings
-      if (this.cachedMeetings.length === 0) {
-        for (const meeting of todaysMeetings) {
-          await this.database.upsertMeeting(meeting);
-        }
-      }
+      const sixWeeksMeetings = meetings.filter(meeting => {
+        const meetingDate = new Date(meeting.startTime);
+        const meetingDateOnly = new Date(meetingDate.getFullYear(), meetingDate.getMonth(), meetingDate.getDate());
+        return meetingDateOnly >= today && meetingDateOnly < sixWeeksFromNow;
+      });
 
       this.lastParsedTime = new Date();
-      this.cachedMeetings = todaysMeetings;
+      this.cachedMeetings = sixWeeksMeetings;
 
-      // Update calendar sync date in store
-      if (this.store) {
-        this.store.set('lastCalendarSyncDate', dateOverride.today());
-        console.log('📅 Updated calendar sync date to', dateOverride.today());
-      }
+      console.log(`📅 Loaded ${sixWeeksMeetings.length} meetings for the next 6 weeks from Excel`);
 
-      console.log(`Loaded ${todaysMeetings.length} meetings for today from Excel`);
-      
       // Debug: Show which meetings are being loaded
-      console.log('🔍 Debug: Meetings being loaded:');
-      todaysMeetings.forEach((meeting, index) => {
+      console.log('🔍 Debug: Meetings being loaded for next 6 weeks:');
+      sixWeeksMeetings.forEach((meeting, index) => {
         console.log(`${index + 1}. ${meeting.title} (${new Date(meeting.startTime).toDateString()})`);
       });
-      
-      return todaysMeetings;
+
+      return sixWeeksMeetings;
 
     } catch (error) {
       console.error('Error loading meetings from Excel:', error);
       throw new Error(`Failed to parse Excel file: ${error.message}`);
+    }
+  }
+
+  async syncSixWeeksMeetingsToDatabase(sixWeeksMeetings) {
+    const today = dateOverride.today();
+    const sixWeeksFromNow = new Date(today);
+    sixWeeksFromNow.setDate(sixWeeksFromNow.getDate() + 42);
+
+    // 1. Get all existing meetings for the next 6 weeks
+    const existingMeetings = await this.database.getMeetingsInDateRange(today, sixWeeksFromNow.toISOString().split('T')[0]);
+
+    // 2. Delete existing meetings that are not in the Excel file
+    const excelFolderNames = new Set(sixWeeksMeetings.map(m => m.folderName));
+    const meetingsToDelete = existingMeetings.filter(m => !excelFolderNames.has(m.folder_name));
+
+    for (const meeting of meetingsToDelete) {
+      await this.database.deleteMeeting(meeting.id);
+      console.log(`🗑️ Removed meeting no longer in Excel: ${meeting.title}`);
+    }
+
+    // 3. Upsert all meetings from Excel
+    for (const meeting of sixWeeksMeetings) {
+      await this.database.upsertMeeting(meeting);
+    }
+
+    console.log(`📅 Synced ${sixWeeksMeetings.length} meetings for the next 6 weeks`);
+    if (meetingsToDelete.length > 0) {
+      console.log(`🗑️ Removed ${meetingsToDelete.length} meetings no longer in Excel`);
     }
   }
 
@@ -147,15 +160,18 @@ class MeetingLoader {
     try {
       const workbook = XLSX.readFile(excelFilePath);
       const meetings = await this.parseCalendarManagementLog(workbook, true); // Include filtered meetings
-      const today = dateOverride.today();
-      
-      const todaysMeetings = meetings.filter(meeting => {
-        const meetingDate = new Date(meeting.startTime).toISOString().split('T')[0];
-        return meetingDate === today;
+      const today = new Date(dateOverride.today());
+      const sixWeeksFromNow = new Date(today);
+      sixWeeksFromNow.setDate(sixWeeksFromNow.getDate() + 42); // 6 weeks = 42 days
+
+      const sixWeeksMeetings = meetings.filter(meeting => {
+        const meetingDate = new Date(meeting.startTime);
+        const meetingDateOnly = new Date(meetingDate.getFullYear(), meetingDate.getMonth(), meetingDate.getDate());
+        return meetingDateOnly >= today && meetingDateOnly < sixWeeksFromNow;
       });
 
       // Convert Excel format to database format for renderer compatibility
-      const formattedMeetings = todaysMeetings.map((meeting, index) => ({
+      const formattedMeetings = sixWeeksMeetings.map((meeting, index) => ({
         id: `excel-${index}`, // Temporary ID for Excel-only meetings
         title: meeting.title,
         folder_name: meeting.folderName,
@@ -167,8 +183,8 @@ class MeetingLoader {
         updated_at: new Date().toISOString()
       }));
 
-      console.log(`Found ${formattedMeetings.length} total meetings for today (including filtered)`);
-      
+      console.log(`Found ${formattedMeetings.length} total meetings for the next 6 weeks (including filtered)`);
+
       return formattedMeetings;
 
     } catch (error) {
@@ -437,7 +453,7 @@ class MeetingLoader {
 
   async refreshMeetings() {
     try {
-      await this.refreshMeetingsFromExcel();
+      await this.loadSixWeeksMeetings();
     } catch (error) {
       console.error('Error refreshing meetings:', error);
       throw error;

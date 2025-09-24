@@ -844,27 +844,50 @@ class MeetingApp {
 
     async updateCalendarButtonColor() {
         try {
-            const lastSyncDate = await ipcRenderer.invoke('get-last-calendar-sync-date');
-            const currentDate = dateOverride.today();
+            const calendarAgeData = await ipcRenderer.invoke('get-calendar-age');
             const calendarBtn = document.getElementById('excel-upload-btn');
 
             if (!calendarBtn) return;
 
-            console.log('🔍 Calendar button color check:', { lastSyncDate, currentDate });
+            console.log('🔍 Calendar age data:', calendarAgeData);
 
-            if (lastSyncDate === currentDate) {
-                // Calendar is current - remove stale class
-                calendarBtn.classList.remove('stale');
-                calendarBtn.title = 'Upload Excel file (calendar up to date)';
-                console.log('📅 Calendar button set to current (not stale)');
+            // Clear existing content and classes
+            calendarBtn.innerHTML = '';
+            calendarBtn.classList.remove('stale', 'calendar-stale');
+
+            if (calendarAgeData.type === 'calendar') {
+                // Show calendar icon (current day or no sync data)
+                calendarBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                `;
+                calendarBtn.style.color = calendarAgeData.color;
             } else {
-                // Calendar is stale - add stale class
-                calendarBtn.classList.add('stale');
-                calendarBtn.title = lastSyncDate
-                    ? `Upload Excel file (last synced: ${lastSyncDate})`
-                    : 'Upload Excel file (never synced)';
-                console.log('📅 Calendar button set to stale');
+                // Show number with color
+                calendarBtn.innerHTML = `
+                    <span style="color: ${calendarAgeData.color}; font-weight: bold; font-size: 14px;">
+                        ${calendarAgeData.days}
+                    </span>
+                `;
             }
+
+            // Update tooltip
+            const tooltipText = calendarAgeData.days === 0
+                ? 'Upload Excel file (calendar synced today)'
+                : `Upload Excel file (last synced ${calendarAgeData.days} day${calendarAgeData.days === 1 ? '' : 's'} ago)`;
+
+            calendarBtn.title = tooltipText;
+
+            // Add visual warning for stale data
+            if (calendarAgeData.isStale) {
+                calendarBtn.classList.add('calendar-stale');
+            }
+
+            console.log(`📅 Calendar button updated: ${calendarAgeData.days} days old, color: ${calendarAgeData.color}`);
         } catch (error) {
             console.error('Error updating calendar button color:', error);
         }

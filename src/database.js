@@ -268,6 +268,13 @@ class Database {
     );
   }
 
+  async getMeetingsInDateRange(startDate, endDate) {
+    return this.all(
+      'SELECT * FROM meetings WHERE date(start_time) >= date(?) AND date(start_time) < date(?) ORDER BY start_time',
+      [startDate, endDate]
+    );
+  }
+
   async upsertMeeting(meeting) {
     // Check if meeting already exists
     const existing = await this.get(

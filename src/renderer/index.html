@@ -367,6 +367,27 @@
             color: #ea580c;
         }
 
+        /* Calendar age states */
+        .excel-upload-btn {
+            transition: all 0.3s ease;
+            border-radius: 4px;
+            padding: 6px 12px;
+        }
+
+        .excel-upload-btn.calendar-stale {
+            background-color: rgba(255, 0, 0, 0.1);
+            border-color: rgba(255, 0, 0, 0.3);
+        }
+
+        .excel-upload-btn.calendar-stale:hover {
+            background-color: rgba(255, 0, 0, 0.15);
+            border-color: rgba(255, 0, 0, 0.5);
+        }
+
+        .excel-upload-btn:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+
         .google-auth-btn {
             background: transparent;
             border: 1px solid #ccc;

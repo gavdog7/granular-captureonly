@@ -306,8 +306,8 @@ async function initializeApp() {
     healthChecker.start();
     console.log('Meeting health checker started');
     
-    // Always load today's meetings from the calendar management log
-    await meetingLoader.loadTodaysMeetings();
+    // Always load 6 weeks of meetings from the calendar management log
+    await meetingLoader.loadSixWeeksMeetings();
 
   } catch (error) {
     console.error('Error initializing app:', error);
@@ -449,6 +449,23 @@ ipcMain.handle('set-setting', (event, key, value) => {
 
 ipcMain.handle('get-last-calendar-sync-date', () => {
   return store.get('lastCalendarSyncDate');
+});
+
+// Calendar age IPC handler for visual indicator
+ipcMain.handle('get-calendar-age', async () => {
+  try {
+    const CalendarAge = require('./utils/calendar-age');
+    const calendarAge = new CalendarAge(store);
+    return calendarAge.getCalendarIconData();
+  } catch (error) {
+    console.error('Error getting calendar age:', error);
+    return {
+      type: 'calendar',
+      days: 0,
+      color: '#666666',
+      isStale: false
+    };
+  }
 });
 
 ipcMain.handle('update-calendar-sync-date', (event, date) => {

@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { app } = require('electron');
 const PostRecordingAnalyzer = require('./post-recording-analyzer');
+const { getLocalDateString } = require('./utils/date-utils');
 
 class AudioRecorder {
   constructor(database, mainWindow = null) {
@@ -375,7 +376,9 @@ class AudioRecorder {
    */
   async createRecordingDirectory(meeting) {
     // Create directory structure: assets/date/meeting-folder/
-    const dateStr = meeting.start_time.split('T')[0]; // YYYY-MM-DD
+    // Use helper function to get local date and avoid timezone issues
+    const dateStr = getLocalDateString(meeting.start_time);
+
     // Use the folder_name from database instead of sanitizing title to ensure consistency
     const meetingFolder = meeting.folder_name || this.sanitizeFolderName(meeting.title);
     const recordingDir = path.join(this.assetsPath, dateStr, meetingFolder);

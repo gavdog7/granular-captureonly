@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { getLocalDateString } = require('./utils/date-utils');
 const { app } = require('electron');
 const { dateOverride } = require('./date-override');
 
@@ -161,7 +162,7 @@ class UploadService {
       }
 
       // Create folder structure in Google Drive
-      const dateStr = meeting.start_time.split('T')[0]; // YYYY-MM-DD
+      const dateStr = getLocalDateString(meeting.start_time); // Local date in YYYY-MM-DD format
       const meetingFolderId = await this.ensureGoogleDriveFolderStructure(dateStr, meeting.folder_name);
       console.log(`📂 Google Drive folder created: ${meetingFolderId}`);
 
@@ -198,7 +199,7 @@ class UploadService {
 
   async gatherMeetingFiles(meetingId, meeting) {
     const files = [];
-    const dateStr = meeting.start_time.split('T')[0];
+    const dateStr = getLocalDateString(meeting.start_time);
     const projectRoot = path.dirname(__dirname);
     
     try {
@@ -497,7 +498,7 @@ class UploadService {
 
   async hasContentToUpload(meetingId, meeting) {
     try {
-      const dateStr = meeting.start_time.split('T')[0];
+      const dateStr = getLocalDateString(meeting.start_time);
       const projectRoot = path.dirname(__dirname);
       
       // Try multiple directory strategies to find content

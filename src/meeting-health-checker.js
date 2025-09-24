@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { generateMarkdownDocument } = require('./quill-to-markdown');
+const { getLocalDateString } = require('./utils/date-utils');
 
 class MeetingHealthChecker {
   constructor(database, uploadService) {
@@ -115,7 +116,7 @@ class MeetingHealthChecker {
       const markdownContent = generateMarkdownDocument(meeting);
       
       // Determine file path
-      const dateStr = meeting.start_time.split('T')[0];
+      const dateStr = getLocalDateString(meeting.start_time);
       const meetingDir = path.join(this.projectRoot, 'assets', dateStr, meeting.folder_name);
       const markdownPath = path.join(meetingDir, `${meeting.folder_name}-notes.md`);
       

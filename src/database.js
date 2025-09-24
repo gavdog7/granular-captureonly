@@ -1,6 +1,7 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs-extra');
+const { getLocalDateString } = require('./utils/date-utils');
 const { app, shell } = require('electron');
 const { dateOverride } = require('./date-override');
 const { generateMarkdownDocument } = require('./quill-to-markdown');
@@ -184,9 +185,8 @@ class Database {
 
       for (const meeting of meetingsWithoutDatePrefix) {
         try {
-          // Extract date from start_time (ISO format: 2025-01-15T09:00:00.000Z)
-          const startDate = new Date(meeting.start_time);
-          const dateStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+          // Extract date from start_time using local timezone
+          const dateStr = getLocalDateString(meeting.start_time);
           
           // Create new folder name with date prefix
           const newFolderName = `${dateStr}-${meeting.folder_name}`;
@@ -630,7 +630,7 @@ class Database {
 
       // Determine file path (alongside audio recordings in project assets)
       const projectRoot = path.dirname(__dirname); // Go up from src/ to project root
-      const dateStr = meeting.start_time.split('T')[0];
+      const dateStr = getLocalDateString(meeting.start_time);
       const meetingDir = path.join(projectRoot, 'assets', dateStr, meeting.folder_name);
       await fs.ensureDir(meetingDir);
 
@@ -677,7 +677,7 @@ class Database {
 
       // Determine file path (same as audio recordings)
       const projectRoot = path.dirname(__dirname); // Go up from src/ to project root
-      const dateStr = meeting.start_time.split('T')[0];
+      const dateStr = getLocalDateString(meeting.start_time);
       const filename = `${meeting.folder_name}-notes.md`;
       const filePath = path.join(projectRoot, 'assets', dateStr, meeting.folder_name, filename);
 
@@ -861,7 +861,7 @@ class Database {
       }
 
       const projectRoot = path.dirname(__dirname); // Go up from src/ to project root
-      const dateStr = meeting.start_time.split('T')[0];
+      const dateStr = getLocalDateString(meeting.start_time);
       const meetingDir = path.join(projectRoot, 'assets', dateStr, meeting.folder_name);
 
       let deletedFiles = [];

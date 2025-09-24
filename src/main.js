@@ -10,6 +10,7 @@ const UploadService = require('./upload-service');
 const GoogleDriveService = require('./google-drive');
 const { MeetingHealthChecker } = require('./meeting-health-checker');
 const Store = require('electron-store');
+const { getLocalDateString } = require('./utils/date-utils');
 
 // Optional SMB mount service (may not be available in all environments)
 let SMBMountService;
@@ -511,7 +512,7 @@ ipcMain.handle('update-meeting-title', async (event, meetingId, title) => {
     await database.updateMeetingTitle(meetingId, title);
 
     // Attempt to rename folder and files
-    const meetingDate = folderInfo.start_time.split('T')[0]; // Extract YYYY-MM-DD
+    const meetingDate = getLocalDateString(folderInfo.start_time); // Extract local YYYY-MM-DD
     const { renameNoteFolderAndFiles, rollbackRename } = require('./utils/file-manager');
     
     const renameResult = await renameNoteFolderAndFiles(

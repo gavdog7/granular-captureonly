@@ -1179,6 +1179,57 @@ class Database {
       return [];
     }
   }
+
+  // Methods for folder reconciliation service
+  async getRecordingSession(sessionId) {
+    try {
+      return await this.get(
+        'SELECT * FROM recording_sessions WHERE id = ?',
+        [sessionId]
+      );
+    } catch (error) {
+      console.error('Error getting recording session:', error);
+      return null;
+    }
+  }
+
+  async updateRecordingPath(sessionId, newPath) {
+    try {
+      const result = await this.run(
+        'UPDATE recording_sessions SET final_path = ? WHERE id = ?',
+        [newPath, sessionId]
+      );
+      return result.changes;
+    } catch (error) {
+      console.error('Error updating recording path:', error);
+      throw error;
+    }
+  }
+
+  async updateMeetingFolderName(meetingId, newFolderName) {
+    try {
+      const result = await this.run(
+        'UPDATE meetings SET folder_name = ? WHERE id = ?',
+        [newFolderName, meetingId]
+      );
+      return result.changes;
+    } catch (error) {
+      console.error('Error updating meeting folder name:', error);
+      throw error;
+    }
+  }
+
+  async getMeetingsByUploadStatus(status) {
+    try {
+      return await this.all(
+        'SELECT * FROM meetings WHERE upload_status = ?',
+        [status]
+      );
+    } catch (error) {
+      console.error('Error getting meetings by upload status:', error);
+      return [];
+    }
+  }
 }
 
 module.exports = Database;

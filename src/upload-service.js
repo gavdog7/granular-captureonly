@@ -121,12 +121,10 @@ class UploadService {
   async uploadMeeting(meetingId) {
     try {
       console.log(`🚀 Starting upload for meeting ${meetingId}`);
-      
-      // Set status to uploading
+
       await this.database.setMeetingUploadStatus(meetingId, 'uploading');
       this.notifyUploadStatusChange(meetingId, 'uploading');
 
-      // Get meeting details
       const meeting = await this.database.getMeetingById(meetingId);
       if (!meeting) {
         throw new Error(`Meeting ${meetingId} not found`);
@@ -134,64 +132,101 @@ class UploadService {
 
       console.log(`📋 Meeting details: ${meeting.title} (${meeting.folder_name})`);
 
-      // Enhanced content detection before gathering files
-      const hasContent = await this.hasContentToUpload(meetingId, meeting);
-      if (!hasContent) {
-        console.log(`📝 Smart detection: No content to upload for meeting ${meetingId}`);
+      // Enhanced content validation
+      const validation = await this.validateMeetingContent(meetingId, meeting);
+
+      if (!validation.hasNotes && !validation.hasRecordings) {
+        console.log(`📝 No content to upload for meeting ${meetingId}`);
         await this.database.setMeetingUploadStatus(meetingId, 'no_content');
         return;
       }
 
-      // Gather files to upload
-      const filesToUpload = await this.gatherMeetingFiles(meetingId, meeting);
-      console.log(`📁 Found ${filesToUpload.length} files to upload:`, filesToUpload.map(f => f.name));
-
-      if (filesToUpload.length === 0) {
-        console.log(`📝 No files found despite content detection - marking as no_content`);
-        await this.database.setMeetingUploadStatus(meetingId, 'no_content');
-        return;
+      // Log any issues found
+      if (validation.issues.length > 0) {
+        console.warn(`⚠️ Content validation issues for meeting ${meetingId}:`, validation.issues);
       }
 
-      // Ensure Google Drive is authenticated
+      // Ensure Google Drive authentication
       if (!this.googleDriveService.drive) {
         console.log('🔐 Initializing Google Drive authentication...');
         await this.googleDriveService.initializeOAuth();
         if (!this.googleDriveService.drive) {
-          throw new Error('Google Drive authentication required. Please configure OAuth credentials.');
+          throw new Error('Google Drive authentication required');
         }
       }
 
-      // Create folder structure in Google Drive
-      const dateStr = getLocalDateString(meeting.start_time); // Local date in YYYY-MM-DD format
+      // Create folder structure
+      const dateStr = getLocalDateString(meeting.start_time);
       const meetingFolderId = await this.ensureGoogleDriveFolderStructure(dateStr, meeting.folder_name);
-      console.log(`📂 Google Drive folder created: ${meetingFolderId}`);
 
-      // Upload all files
-      for (const file of filesToUpload) {
-        console.log(`⬆️ Uploading ${file.name}...`);
-        await this.uploadFileToGoogleDrive(file, meetingFolderId);
-        console.log(`✅ Uploaded ${file.name}`);
+      const uploadResults = {
+        notes: [],
+        recordings: [],
+        failed: []
+      };
+
+      // Upload notes files
+      for (const noteFile of validation.notes) {
+        try {
+          console.log(`⬆️ Uploading note: ${noteFile.name}...`);
+          const result = await this.uploadFileToGoogleDrive({
+            name: noteFile.name,
+            path: noteFile.path,
+            type: 'markdown'
+          }, meetingFolderId);
+          uploadResults.notes.push(result);
+          console.log(`✅ Uploaded note: ${noteFile.name}`);
+        } catch (error) {
+          console.error(`❌ Failed to upload note ${noteFile.name}:`, error);
+          uploadResults.failed.push({ file: noteFile.name, error: error.message, type: 'note' });
+        }
       }
 
-      // Mark as completed
-      await this.database.setMeetingUploadStatus(meetingId, 'completed', meetingFolderId);
-      console.log(`🎉 Meeting ${meetingId} upload completed successfully`);
+      // Upload recording files
+      for (const recording of validation.recordings) {
+        try {
+          console.log(`⬆️ Uploading recording: ${recording.name}...`);
+          const stats = await fs.stat(recording.path);
+          const result = await this.uploadFileToGoogleDrive({
+            name: recording.name,
+            path: recording.path,
+            size: stats.size,
+            type: 'audio'
+          }, meetingFolderId);
+          uploadResults.recordings.push(result);
+          console.log(`✅ Uploaded recording: ${recording.name} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+        } catch (error) {
+          console.error(`❌ Failed to upload recording ${recording.name}:`, error);
+          uploadResults.failed.push({ file: recording.name, error: error.message, type: 'recording' });
+        }
+      }
+
+      // Determine final status
+      const totalFiles = validation.notes.length + validation.recordings.length;
+      const successfulUploads = uploadResults.notes.length + uploadResults.recordings.length;
+
+      if (uploadResults.failed.length === 0) {
+        await this.database.setMeetingUploadStatus(meetingId, 'completed', meetingFolderId);
+        console.log(`🎉 Meeting ${meetingId} upload completed successfully (${successfulUploads}/${totalFiles} files)`);
+      } else if (successfulUploads > 0) {
+        await this.database.setMeetingUploadStatus(meetingId, 'partial', meetingFolderId);
+        console.log(`⚠️ Meeting ${meetingId} upload partially completed (${successfulUploads}/${totalFiles} files, ${uploadResults.failed.length} failed)`);
+        // Re-queue for retry
+        setTimeout(() => this.queueMeetingUpload(meetingId), 30000);
+      } else {
+        throw new Error(`All uploads failed: ${uploadResults.failed.map(f => f.error).join(', ')}`);
+      }
 
     } catch (error) {
       console.error(`💥 Upload failed for meeting ${meetingId}:`, error);
-      
-      // Handle auth expiration separately
+
       if (error.message === 'AUTH_EXPIRED') {
-        console.log(`🔐 Auth expired for meeting ${meetingId} - not marking as failed`);
-        // Don't mark as failed - leave as pending for retry after re-auth
-        // Notify the UI about auth expiration
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
           this.mainWindow.webContents.send('upload-auth-required', { meetingId });
         }
-        // Re-throw the error to prevent marking as completed
         throw new Error('UPLOAD_AUTH_REQUIRED');
       }
-      
+
       await this.database.setMeetingUploadStatus(meetingId, 'failed');
       throw error;
     }
@@ -496,36 +531,93 @@ class UploadService {
     return this.database.getUploadQueue('pending').then(items => items.length).catch(() => 0);
   }
 
-  async hasContentToUpload(meetingId, meeting) {
+  async validateMeetingContent(meetingId, meeting) {
+    const validation = {
+      hasNotes: false,
+      hasRecordings: false,
+      recordings: [],
+      notes: [],
+      issues: []
+    };
+
     try {
       const dateStr = getLocalDateString(meeting.start_time);
       const projectRoot = path.dirname(__dirname);
-      
-      // Try multiple directory strategies to find content
+
+      // Find all possible directories
       const possibleDirs = await this.findMeetingDirectories(meeting, dateStr, projectRoot);
-      
-      // Check all possible directories for content
-      for (const meetingDir of possibleDirs) {
-        if (await fs.pathExists(meetingDir)) {
-          const files = await fs.readdir(meetingDir);
-          const contentFiles = files.filter(file => 
-            file.endsWith('.md') || 
-            file.endsWith('.opus') || 
-            file.endsWith('.wav') || 
-            file.endsWith('.m4a') ||
-            file.endsWith('.mp3')
+
+      // Check each directory for content
+      for (const dir of possibleDirs) {
+        if (await fs.pathExists(dir)) {
+          const files = await fs.readdir(dir);
+
+          // Find notes
+          const noteFiles = files.filter(f => f.endsWith('.md'));
+          noteFiles.forEach(file => {
+            validation.notes.push({
+              path: path.join(dir, file),
+              name: file,
+              directory: dir
+            });
+          });
+
+          // Find recordings
+          const audioFiles = files.filter(f =>
+            f.endsWith('.opus') || f.endsWith('.m4a') || f.endsWith('.wav')
           );
-          
-          if (contentFiles.length > 0) {
-            console.log(`✅ Meeting ${meetingId} has ${contentFiles.length} content files in ${meetingDir}`);
-            return true;
-          }
+          audioFiles.forEach(file => {
+            validation.recordings.push({
+              path: path.join(dir, file),
+              name: file,
+              directory: dir
+            });
+          });
         }
       }
 
+      // Additional check: search by session ID
+      const sessionRecordings = await this.findRecordingBySessionId(meetingId, dateStr, projectRoot);
+      sessionRecordings.forEach(recording => {
+        const existing = validation.recordings.find(r => r.path === recording.path);
+        if (!existing) {
+          validation.recordings.push({
+            path: recording.path,
+            name: recording.filename,
+            directory: recording.folder,
+            foundBySessionId: true
+          });
+          validation.issues.push(`Recording found by session ID in unexpected location: ${recording.folder}`);
+        }
+      });
+
+      validation.hasNotes = validation.notes.length > 0;
+      validation.hasRecordings = validation.recordings.length > 0;
+
+      return validation;
+
+    } catch (error) {
+      console.error(`Error validating content for meeting ${meetingId}:`, error);
+      validation.issues.push(`Validation error: ${error.message}`);
+      return validation;
+    }
+  }
+
+  async hasContentToUpload(meetingId, meeting) {
+    try {
+      const validation = await this.validateMeetingContent(meetingId, meeting);
+
+      if (validation.hasNotes || validation.hasRecordings) {
+        console.log(`✅ Meeting ${meetingId} has content: ${validation.notes.length} notes, ${validation.recordings.length} recordings`);
+        if (validation.issues.length > 0) {
+          console.warn(`⚠️ Issues found:`, validation.issues);
+        }
+        return true;
+      }
+
       // Check database notes (in case markdown not exported yet)
-      if (meeting.notes_content && 
-          meeting.notes_content.trim() !== '' && 
+      if (meeting.notes_content &&
+          meeting.notes_content.trim() !== '' &&
           meeting.notes_content !== '{}' &&
           meeting.notes_content !== '[]') {
         console.log(`✅ Meeting ${meetingId} has notes in database`);
@@ -541,14 +633,57 @@ class UploadService {
     }
   }
 
+  async findRecordingBySessionId(meetingId, dateStr, projectRoot) {
+    const basePath = path.join(projectRoot, 'assets', dateStr);
+    const foundFiles = [];
+
+    try {
+      if (await fs.pathExists(basePath)) {
+        const subdirs = await fs.readdir(basePath);
+
+        for (const subdir of subdirs) {
+          const subdirPath = path.join(basePath, subdir);
+          if ((await fs.stat(subdirPath)).isDirectory()) {
+            const files = await fs.readdir(subdirPath);
+            const matchingFiles = files.filter(file =>
+              file.includes(`session${meetingId}`) && file.endsWith('.opus')
+            );
+
+            matchingFiles.forEach(file => {
+              foundFiles.push({
+                path: path.join(subdirPath, file),
+                folder: subdir,
+                filename: file
+              });
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error searching for session ${meetingId}:`, error);
+    }
+
+    return foundFiles;
+  }
+
   async findMeetingDirectories(meeting, dateStr, projectRoot) {
     const basePath = path.join(projectRoot, 'assets', dateStr);
     const possibleDirs = [];
-    
+
     // Strategy 1: Use database folder_name
     possibleDirs.push(path.join(basePath, meeting.folder_name));
-    
-    // Strategy 2: Look for directories that might match this meeting
+
+    // Strategy 2: Search by session ID for recordings
+    const sessionRecordings = await this.findRecordingBySessionId(meeting.id, dateStr, projectRoot);
+    sessionRecordings.forEach(recording => {
+      const recordingDir = path.dirname(recording.path);
+      if (!possibleDirs.includes(recordingDir)) {
+        possibleDirs.push(recordingDir);
+        console.log(`📁 Found recording by session ID in: ${recording.folder}`);
+      }
+    });
+
+    // Strategy 3: Look for directories that might match this meeting (title-based)
     try {
       if (await fs.pathExists(basePath)) {
         const allDirs = await fs.readdir(basePath);
@@ -556,20 +691,23 @@ class UploadService {
           // Look for directories that contain meeting title words
           const titleWords = meeting.title.toLowerCase().split(/\s+/).filter(word => word.length > 3);
           const dirName = dir.toLowerCase();
-          
+
           // Check if directory name contains any significant words from the title
           return titleWords.some(word => dirName.includes(word));
         });
-        
+
         // Add these potential matches
         meetingDirs.forEach(dir => {
-          possibleDirs.push(path.join(basePath, dir));
+          const fullPath = path.join(basePath, dir);
+          if (!possibleDirs.includes(fullPath)) {
+            possibleDirs.push(fullPath);
+          }
         });
       }
     } catch (error) {
       console.warn(`Could not scan directory ${basePath}:`, error.message);
     }
-    
+
     return possibleDirs;
   }
 }

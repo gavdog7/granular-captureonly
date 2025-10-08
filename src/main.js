@@ -7,6 +7,7 @@ const Database = require('./database');
 const MeetingLoader = require('./meeting-loader');
 const AudioRecorder = require('./audio-recorder');
 const UploadService = require('./upload-service');
+const FolderReconciliationService = require('./folder-reconciliation');
 const GoogleDriveService = require('./google-drive');
 const { MeetingHealthChecker } = require('./meeting-health-checker');
 const Store = require('electron-store');
@@ -28,6 +29,7 @@ let database;
 let meetingLoader;
 let audioRecorder;
 let uploadService;
+let folderReconciliationService;
 let googleDriveService;
 let smbMountService;
 let healthChecker;
@@ -305,6 +307,11 @@ async function initializeApp() {
     healthChecker = new MeetingHealthChecker(database, uploadService);
     healthChecker.start();
     console.log('Meeting health checker started');
+
+    // Initialize folder reconciliation service
+    folderReconciliationService = new FolderReconciliationService(database, uploadService);
+    await folderReconciliationService.initialize();
+    console.log('Folder reconciliation service started');
     
     // Always load 6 weeks of meetings from the calendar management log
     await meetingLoader.loadSixWeeksMeetings();
@@ -367,6 +374,12 @@ app.on('before-quit', async (event) => {
     if (healthChecker) {
       console.log('Stopping health checker...');
       healthChecker.stop();
+    }
+
+    // Stop folder reconciliation service
+    if (folderReconciliationService) {
+      console.log('Stopping folder reconciliation service...');
+      await folderReconciliationService.shutdown();
     }
 
     // Clean up audio recorder and its processes

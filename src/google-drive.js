@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs-extra');
+const log = require('./utils/logger');
 
 class GoogleDriveService {
   constructor(store, mainWindow) {
@@ -16,6 +17,10 @@ class GoogleDriveService {
     const REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob';
 
     if (!CLIENT_ID || !CLIENT_SECRET) {
+      log.error('[UPLOAD] Google OAuth credentials not configured', {
+        error: 'Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET',
+        requiresUserAction: true
+      });
       throw new Error('Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.');
     }
 
@@ -29,6 +34,15 @@ class GoogleDriveService {
     if (tokens) {
       this.oauth2Client.setCredentials(tokens);
       this.drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+
+      log.info('[UPLOAD] Google OAuth initialized with existing tokens', {
+        hasRefreshToken: !!tokens.refresh_token,
+        hasAccessToken: !!tokens.access_token
+      });
+    } else {
+      log.warn('[UPLOAD] Google OAuth initialized without tokens', {
+        requiresUserAction: true
+      });
     }
   }
 
@@ -46,25 +60,54 @@ class GoogleDriveService {
 
   async exchangeCodeForTokens(code) {
     try {
+      log.info('[UPLOAD] Exchanging OAuth code for tokens', {
+        codeLength: code ? code.length : 0
+      });
+
       const { tokens } = await this.oauth2Client.getToken(code);
       this.oauth2Client.setCredentials(tokens);
       this.store.set('googleTokens', tokens);
       this.drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+
+      log.info('[UPLOAD] Authentication successful', {
+        hasRefreshToken: !!tokens.refresh_token,
+        hasAccessToken: !!tokens.access_token
+      });
+
       return true;
     } catch (error) {
       console.error('Error exchanging code for tokens:', error);
+
+      log.error('[UPLOAD] Authentication failed', {
+        error: error.message,
+        errorType: 'auth',
+        requiresUserAction: true
+      });
+
       throw error;
     }
   }
 
   async refreshTokens() {
     try {
+      log.info('[UPLOAD] Refreshing Google OAuth tokens');
+
       const { credentials } = await this.oauth2Client.refreshAccessToken();
       this.oauth2Client.setCredentials(credentials);
       this.store.set('googleTokens', credentials);
+
+      log.info('[UPLOAD] Token refresh successful');
+
       return true;
     } catch (error) {
       console.error('Error refreshing tokens:', error);
+
+      log.error('[UPLOAD] Token refresh failed', {
+        error: error.message,
+        errorType: 'auth',
+        requiresUserAction: true
+      });
+
       this.store.delete('googleTokens');
       this.oauth2Client.setCredentials({});
       this.drive = null;
@@ -78,23 +121,29 @@ class GoogleDriveService {
 
   async handleAuthError(error) {
     // Check if error is due to expired/revoked token
-    if (error.message && (error.message.includes('invalid_grant') || 
+    if (error.message && (error.message.includes('invalid_grant') ||
         error.message.includes('Token has been expired or revoked'))) {
       console.error('🔐 Google OAuth token expired or revoked');
-      
+
+      log.error('[UPLOAD] Google OAuth token expired or revoked', {
+        error: error.message,
+        errorType: 'auth',
+        requiresUserAction: true
+      });
+
       // Clear stored tokens
       this.store.delete('googleTokens');
       this.drive = null;
-      
+
       // Notify the UI
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         this.mainWindow.webContents.send('google-auth-expired');
       }
-      
+
       // Return a specific error that upload service can handle
       throw new Error('AUTH_EXPIRED');
     }
-    
+
     // Re-throw other errors
     throw error;
   }
@@ -312,6 +361,8 @@ class GoogleDriveService {
   }
 
   logout() {
+    log.info('[UPLOAD] Google Drive logout');
+
     this.store.delete('googleTokens');
     this.oauth2Client.setCredentials({});
     this.drive = null;

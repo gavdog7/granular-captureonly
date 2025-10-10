@@ -1,6 +1,7 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs-extra');
+const log = require('./utils/logger');
 const { getLocalDateString } = require('./utils/date-utils');
 const { app, shell } = require('electron');
 const { dateOverride } = require('./date-override');
@@ -405,6 +406,14 @@ class Database {
   }
 
   async updateMeetingFolderName(meetingId, folderName) {
+    // Log database folder update
+    log.info('[RENAME] Updating folder name in database', {
+      meetingId,
+      oldFolderName: null, // Will be available from calling context
+      newFolderName: folderName,
+      timestamp: Date.now()
+    });
+
     return this.run(
       'UPDATE meetings SET folder_name = ?, updated_at = ? WHERE id = ?',
       [folderName, new Date().toISOString(), meetingId]
@@ -425,7 +434,16 @@ class Database {
         'SELECT id, final_path FROM recording_sessions WHERE meeting_id = ?',
         [meetingId]
       );
-      
+
+      // Log recording paths update
+      log.info('[RENAME] Updating recording paths', {
+        meetingId,
+        recordingsToUpdate: recordings.length,
+        oldFolderName,
+        newFolderName,
+        timestamp: Date.now()
+      });
+
       // Update each recording path
       for (const recording of recordings) {
         if (recording.final_path && recording.final_path.includes(oldFolderName)) {
@@ -435,9 +453,18 @@ class Database {
             [newPath, recording.id]
           );
           console.log(`📝 Updated recording path from ${recording.final_path} to ${newPath}`);
+
+          // Log individual path update
+          log.debug('[RENAME] Updated recording path', {
+            meetingId,
+            recordingId: recording.id,
+            oldPath: recording.final_path,
+            newPath,
+            timestamp: Date.now()
+          });
         }
       }
-      
+
       return { success: true, updated: recordings.length };
     } catch (error) {
       console.error('Error updating recording paths:', error);

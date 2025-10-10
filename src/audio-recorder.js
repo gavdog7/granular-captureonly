@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
 const { app } = require('electron');
+const log = require('./utils/logger');
 const PostRecordingAnalyzer = require('./post-recording-analyzer');
 const { getLocalDateString } = require('./utils/date-utils');
 const audioDebug = require('./utils/audio-debug');
@@ -40,6 +41,18 @@ class AudioRecorder {
    */
   async startRecording(meetingId, attempt = 1) {
     console.log(`🎤 [AUDIO DEBUG] Starting recording for meeting ${meetingId}, attempt ${attempt}`);
+
+    // Log recording start attempt
+    log.info('[RECORDING] Start attempt', {
+      meetingId,
+      sessionId: null, // Will be set after creation
+      attempt,
+      activeRecordings: this.activeRecordings.size,
+      lastStopTime: this.lastStopTime,
+      timeSinceLastStop: this.lastStopTime ? Date.now() - this.lastStopTime : null,
+      timestamp: Date.now()
+    });
+
     try {
       // Check if already recording for this meeting
       if (this.activeRecordings.has(meetingId)) {
@@ -58,6 +71,16 @@ class AudioRecorder {
         if (timeSinceLastStop < minDelay) {
           const waitTime = minDelay - timeSinceLastStop;
           console.log(`🎙️ Audio session cleanup: waiting ${waitTime}ms before starting new recording`);
+
+          // Log audio session cleanup delay
+          log.warn('[RECORDING] Audio session cleanup delay required', {
+            meetingId,
+            timeSinceLastStop,
+            waitTime,
+            reason: 'macOS audio session management',
+            timestamp: Date.now()
+          });
+
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
@@ -85,6 +108,18 @@ class AudioRecorder {
       // Create recording session in database
       const sessionResult = await this.database.startRecordingSession(meetingId, finalPath);
       const sessionId = sessionResult.lastID;
+
+      // Log session created
+      const dirExists = await require('fs-extra').pathExists(recordingDir);
+      const partNumber = await this.getNextPartNumber(meetingId);
+      log.info('[RECORDING] Session created', {
+        meetingId,
+        sessionId,
+        finalPath,
+        dirExists,
+        partNumber,
+        timestamp: Date.now()
+      });
 
       // Start native audio capture process
       console.log(`🎯 [AUDIO DEBUG] Starting capture process with path: ${finalPath}`);
@@ -276,6 +311,20 @@ class AudioRecorder {
         recording.duration
       );
       console.log(`✅ [AUDIO DEBUG] Database updated for recording session ${recording.sessionId}`);
+
+      // Get final file stats
+      const stats = fileExists ? await fs.stat(recording.finalPath) : null;
+
+      // Log recording stopped
+      log.info('[RECORDING] Recording stopped', {
+        meetingId,
+        sessionId: recording.sessionId,
+        duration: recording.duration,
+        finalFileSize: stats?.size,
+        finalPath: recording.finalPath,
+        wasValidated: true,
+        timestamp: Date.now()
+      });
 
       // Start post-processing analysis asynchronously (non-blocking)
       this.startPostProcessing(recording.sessionId, recording.finalPath, recording.duration);
@@ -480,6 +529,16 @@ class AudioRecorder {
       process.on('spawn', () => {
         console.log(`🚀 [AUDIO DEBUG] Audio capture process spawned with PID: ${process.pid}`);
         console.log(`📋 [AUDIO DEBUG] Process command: ${this.binaryPath} start --output ${outputPath} --bitrate 32000`);
+
+        // Log native process spawned
+        log.info('[RECORDING] Native process spawned', {
+          meetingId: null, // Will be added by caller context
+          sessionId: null, // Will be added by caller context
+          pid: process.pid,
+          command: `${this.binaryPath} start --output ${outputPath} --bitrate 32000`,
+          timestamp: Date.now()
+        });
+
         resolve(process);
       });
     });
@@ -524,6 +583,17 @@ class AudioRecorder {
       const fs = require('fs').promises;
       const stats = await fs.stat(recordingSession.finalPath);
       console.log(`📊 [AUDIO DEBUG] File validation - Size after 2 seconds: ${stats.size} bytes`);
+
+      // Log validation checkpoint
+      log.info('[RECORDING] Validation checkpoint', {
+        meetingId,
+        sessionId: recordingSession.sessionId,
+        fileSize: stats.size,
+        expectedMinSize: 1024,
+        passed: stats.size >= 1024,
+        elapsedSeconds: 2,
+        timestamp: Date.now()
+      });
 
       // Check if file is growing (should be > 1KB after 2 seconds for active recording)
       if (stats.size < 1024) {

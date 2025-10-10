@@ -555,6 +555,8 @@ ipcMain.handle('update-meeting-participants', async (event, meetingId, participa
 });
 
 ipcMain.handle('update-meeting-title', async (event, meetingId, title) => {
+  const renameStartTime = Date.now();
+
   try {
     // Get current folder info before updating title
     const folderInfo = await database.getMeetingFolderInfo(meetingId);
@@ -562,42 +564,82 @@ ipcMain.handle('update-meeting-title', async (event, meetingId, title) => {
       throw new Error('Meeting not found');
     }
 
+    // Log rename initiated
+    log.info('[RENAME] Meeting rename initiated', {
+      meetingId,
+      oldTitle: folderInfo.title,
+      newTitle: title,
+      oldFolderName: folderInfo.folder_name,
+      activeRecording: null, // Check if recording is active
+      timestamp: Date.now()
+    });
+
     // Update the title first
     await database.updateMeetingTitle(meetingId, title);
 
     // Attempt to rename folder and files
     const meetingDate = getLocalDateString(folderInfo.start_time); // Extract local YYYY-MM-DD
     const { renameNoteFolderAndFiles, rollbackRename } = require('./utils/file-manager');
-    
+
     const renameResult = await renameNoteFolderAndFiles(
-      meetingDate, 
-      folderInfo.folder_name, 
+      meetingDate,
+      folderInfo.folder_name,
       title
     );
 
     if (renameResult.success) {
       // Update database with new folder name
       await database.updateMeetingFolderName(meetingId, renameResult.newFolderName);
-      
+
       // Update recording paths to reflect the new folder
       await database.updateRecordingPaths(meetingId, folderInfo.folder_name, renameResult.newFolderName);
-      
-      return { 
-        success: true, 
+
+      // Log rename completed
+      log.info('[RENAME] Rename operation completed', {
+        meetingId,
+        success: true,
+        newFolderName: renameResult.newFolderName,
+        filesRenamed: renameResult.filesRenamed || 0,
+        duration: Date.now() - renameStartTime,
+        timestamp: Date.now()
+      });
+
+      return {
+        success: true,
         folderRenamed: true,
-        newFolderName: renameResult.newFolderName 
+        newFolderName: renameResult.newFolderName
       };
     } else {
       // Folder rename failed, but title update succeeded
       console.warn('Folder rename failed:', renameResult.error);
-      return { 
-        success: true, 
+
+      // Log rename failure
+      log.warn('[RENAME] Rename operation failed', {
+        meetingId,
+        success: false,
+        error: renameResult.error,
+        duration: Date.now() - renameStartTime,
+        timestamp: Date.now()
+      });
+
+      return {
+        success: true,
         folderRenamed: false,
-        error: renameResult.error 
+        error: renameResult.error
       };
     }
   } catch (error) {
     console.error('Error updating meeting title:', error);
+
+    // Log rename error
+    log.error('[RENAME] Rename operation error', {
+      meetingId,
+      success: false,
+      error: error.message,
+      duration: Date.now() - renameStartTime,
+      timestamp: Date.now()
+    });
+
     throw error;
   }
 });

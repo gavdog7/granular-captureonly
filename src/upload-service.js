@@ -704,10 +704,31 @@ class UploadService {
       // Find all possible directories
       const possibleDirs = await this.findMeetingDirectories(meeting, dateStr, projectRoot);
 
+      // Log path resolution for rename debugging
+      log.debug('[RENAME] Resolving paths for upload', {
+        meetingId,
+        currentFolderName: meeting.folder_name,
+        pathsToTry: possibleDirs.map(d => path.basename(d)),
+        timestamp: Date.now()
+      });
+
       // Check each directory for content
       for (const dir of possibleDirs) {
-        if (await fs.pathExists(dir)) {
+        const exists = await fs.pathExists(dir);
+        let filesFound = 0;
+
+        if (exists) {
           const files = await fs.readdir(dir);
+          filesFound = files.length;
+
+          // Log directory check
+          log.debug('[RENAME] Checking directory', {
+            meetingId,
+            dir: path.basename(dir),
+            exists,
+            filesFound,
+            timestamp: Date.now()
+          });
 
           // Find notes
           const noteFiles = files.filter(f => f.endsWith('.md'));

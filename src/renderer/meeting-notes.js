@@ -204,12 +204,20 @@ function initializeEventListeners() {
     
     // Save before page unload and stop recording
     window.addEventListener('beforeunload', (e) => {
+        // Log meeting page closed
+        log.info('[RECORDING] Meeting page closed', {
+            meetingId: parseInt(currentMeetingId),
+            viewId: `view-${Date.now()}`, // Generate closing viewId
+            recordingStopped: currentRecordingStatus && currentRecordingStatus.isRecording,
+            timestamp: Date.now()
+        });
+
         // Stop recording status updates
         stopRecordingStatusUpdates();
 
         // Stop file size monitoring
         stopFileSizeMonitoring();
-        
+
         // Stop recording if active
         if (currentRecordingStatus && currentRecordingStatus.isRecording) {
             console.log('Page unloading, stopping recording');
@@ -717,6 +725,17 @@ function setRecordingStatus(recordingStatus) {
 async function initializeRecording() {
     try {
         console.log('🎙️ NOTES: Initializing recording for meeting:', currentMeetingId);
+
+        // Generate viewId for this page view
+        const viewId = `view-${Date.now()}`;
+
+        // Log meeting page opened
+        log.info('[RECORDING] Meeting page opened', {
+            meetingId: parseInt(currentMeetingId),
+            viewId,
+            timestamp: Date.now(),
+            existingRecordingStatus: null // Will be populated after status check
+        });
 
         // Set up recording indicator click handler
         const recordingIndicator = document.getElementById('recordingIndicator');

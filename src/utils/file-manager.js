@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const log = require('./logger');
 
 /**
  * Convert a title to a filesystem-safe folder name
@@ -50,48 +51,81 @@ async function generateUniqueFolderName(basePath, folderName) {
  * @returns {Promise<{success: boolean, newFolderName?: string, error?: string}>}
  */
 async function renameNoteFolderAndFiles(meetingDate, oldFolderName, newTitle) {
+    let meetingId = null; // Will be extracted if possible
+
     try {
         // Generate new folder name from title
         const baseFolderName = generateSafeFolderName(newTitle);
-        
+
         if (!baseFolderName) {
             throw new Error('Title cannot be converted to a valid folder name');
         }
-        
+
         const assetsPath = path.join(process.cwd(), 'assets', meetingDate);
         const oldFolderPath = path.join(assetsPath, oldFolderName);
-        
+
         // Check if old folder exists
         try {
             await fs.access(oldFolderPath);
         } catch (error) {
             throw new Error(`Original folder not found: ${oldFolderPath}`);
         }
-        
+
+        // Get list of files before rename
+        const files = await fs.readdir(oldFolderPath);
+
         // Generate unique folder name
         const newFolderName = await generateUniqueFolderName(assetsPath, baseFolderName);
         const newFolderPath = path.join(assetsPath, newFolderName);
-        
+
+        // Log folder rename
+        log.info('[RENAME] Renaming folder on disk', {
+            meetingId,
+            oldPath: oldFolderPath,
+            newPath: newFolderPath,
+            filesInFolder: files.length,
+            timestamp: Date.now()
+        });
+
         // Rename the folder
         await fs.rename(oldFolderPath, newFolderPath);
-        
+
         // Rename the notes.md file if it exists
         const oldNotesFile = path.join(newFolderPath, `${oldFolderName}-notes.md`);
         const newNotesFile = path.join(newFolderPath, `${newFolderName}-notes.md`);
-        
+
         try {
             await fs.access(oldNotesFile);
+            const oldStats = await fs.stat(oldNotesFile);
+
+            // Log individual file rename
+            log.debug('[RENAME] Renaming file', {
+                meetingId,
+                oldFilePath: oldNotesFile,
+                newFilePath: newNotesFile,
+                fileSize: oldStats.size,
+                timestamp: Date.now()
+            });
+
             await fs.rename(oldNotesFile, newNotesFile);
         } catch (error) {
             // Notes file doesn't exist yet, that's okay
         }
-        
+
         return {
             success: true,
-            newFolderName: newFolderName
+            newFolderName: newFolderName,
+            filesRenamed: files.length
         };
-        
+
     } catch (error) {
+        // Log error
+        log.error('[RENAME] Folder rename failed', {
+            meetingId,
+            error: error.message,
+            timestamp: Date.now()
+        });
+
         return {
             success: false,
             error: error.message

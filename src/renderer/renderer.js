@@ -1,5 +1,6 @@
 const { ipcRenderer } = require('electron');
 const { dateOverride } = require('../date-override');
+const log = require('../utils/renderer-logger');
 
 class MeetingApp {
     constructor() {
@@ -15,6 +16,12 @@ class MeetingApp {
     }
 
     init() {
+        // Test logger - Log renderer initialization
+        log.info('[RENDERER] Meeting app initialized', {
+            timestamp: Date.now(),
+            page: 'index'
+        });
+
         this.setupEventListeners();
         this.loadMeetings();
         this.checkGoogleAuthStatus();

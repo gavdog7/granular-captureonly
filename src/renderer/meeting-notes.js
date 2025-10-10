@@ -1,6 +1,7 @@
 // Meeting Notes Page JavaScript
 console.log('meeting-notes.js script loading...');
 const { ipcRenderer } = require('electron');
+const log = require('../utils/renderer-logger');
 console.log('ipcRenderer loaded successfully');
 
 let quill;
@@ -1390,14 +1391,35 @@ async function updateMeetingDurationToActual() {
 // Handle navigation back to nav page
 async function handleNavigationBack() {
     console.log('🔙 handleNavigationBack called');
-    
+
+    // T0: Pipeline initiated
+    const pipelineId = `pipeline-${currentMeetingId}-${Date.now()}`;
+    const t0 = Date.now();
+
+    log.info('[PIPELINE] Navigation back initiated', {
+        meetingId: parseInt(currentMeetingId),
+        pipelineId,
+        stage: 'T0-navigation-start',
+        timestamp: t0
+    });
+
     // Also log to main process so we can see it in terminal
     ipcRenderer.invoke('log-to-main', '🔙 MARKDOWN EXPORT: handleNavigationBack called');
-    
+
     try {
         // Ensure notes are saved first
         console.log('💾 Ensuring notes are saved...');
         await ensureNotesAreSaved();
+
+        // T1: Notes saved
+        const t1 = Date.now();
+        log.info('[PIPELINE] Notes saved', {
+            meetingId: parseInt(currentMeetingId),
+            pipelineId,
+            stage: 'T1-notes-saved',
+            timestamp: t1,
+            duration: t1 - t0
+        });
         
         // Update meeting duration to actual time spent
         try {
@@ -1411,7 +1433,7 @@ async function handleNavigationBack() {
         // Stop recording if active and wait for database update
         if (currentRecordingStatus && currentRecordingStatus.isRecording) {
             console.log('🛑 Stopping recording before navigation...');
-            
+
             // Validate meeting ID before stopping recording
             const meetingId = parseInt(currentMeetingId);
             if (isNaN(meetingId)) {
@@ -1423,6 +1445,17 @@ async function handleNavigationBack() {
                 }
             }
         }
+
+        // T2: Recording stopped
+        const t2 = Date.now();
+        log.info('[PIPELINE] Recording stopped', {
+            meetingId: parseInt(currentMeetingId),
+            pipelineId,
+            stage: 'T2-recording-stopped',
+            timestamp: t2,
+            duration: t2 - t0,
+            wasRecording: currentRecordingStatus && currentRecordingStatus.isRecording
+        });
         
         // Get current notes content
         const currentContent = quill.getContents();
@@ -1448,22 +1481,73 @@ async function handleNavigationBack() {
             console.log('✅ Meeting notes exported to markdown:', exportResult.filename);
             console.log('📂 File path:', exportResult.filePath);
             ipcRenderer.invoke('log-to-main', `✅ MARKDOWN EXPORT: Success! File: ${exportResult.filename}`);
+
+            // T3: Markdown exported
+            const t3 = Date.now();
+            log.info('[PIPELINE] Markdown exported', {
+                meetingId: parseInt(currentMeetingId),
+                pipelineId,
+                stage: 'T3-markdown-exported',
+                timestamp: t3,
+                duration: t3 - t0,
+                filePath: exportResult.filePath,
+                fileName: exportResult.filename
+            });
             
             // Queue upload to Google Drive (markdown + audio files)
             console.log('📤 Queueing meeting upload to Google Drive...');
             ipcRenderer.invoke('log-to-main', `📤 UPLOAD: Queueing upload for meeting ${currentMeetingId}`);
             try {
                 const uploadResult = await ipcRenderer.invoke('queue-meeting-upload', currentMeetingId);
+
+                // T4: Upload queued
+                const t4 = Date.now();
+
                 if (uploadResult.success) {
                     console.log('✅ Meeting upload queued successfully');
                     ipcRenderer.invoke('log-to-main', `✅ UPLOAD: Meeting ${currentMeetingId} queued for upload`);
+
+                    log.info('[PIPELINE] Upload queued', {
+                        meetingId: parseInt(currentMeetingId),
+                        pipelineId,
+                        stage: 'T4-upload-queued',
+                        timestamp: t4,
+                        duration: t4 - t0,
+                        success: true,
+                        breakdown: {
+                            t1_t0_notes: t1 - t0,
+                            t2_t1_recording: t2 - t1,
+                            t3_t2_markdown: t3 - t2,
+                            t4_t3_queue: t4 - t3
+                        }
+                    });
                 } else {
                     console.error('❌ Failed to queue meeting upload:', uploadResult.error);
                     ipcRenderer.invoke('log-to-main', `❌ UPLOAD: Failed to queue - ${uploadResult.error}`);
+
+                    log.error('[PIPELINE] Upload queue failed', {
+                        meetingId: parseInt(currentMeetingId),
+                        pipelineId,
+                        stage: 'T4-upload-queued',
+                        timestamp: t4,
+                        duration: t4 - t0,
+                        success: false,
+                        error: uploadResult.error
+                    });
                 }
             } catch (uploadError) {
                 console.error('❌ Error queueing upload:', uploadError);
                 ipcRenderer.invoke('log-to-main', `❌ UPLOAD: Error - ${uploadError.message}`);
+
+                log.error('[PIPELINE] Upload queue error', {
+                    meetingId: parseInt(currentMeetingId),
+                    pipelineId,
+                    stage: 'T4-upload-queued',
+                    timestamp: Date.now(),
+                    duration: Date.now() - t0,
+                    success: false,
+                    error: uploadError.message
+                });
             }
             
         } else {

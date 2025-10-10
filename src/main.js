@@ -3,6 +3,7 @@ require('dotenv').config();
 const { app, BrowserWindow, Menu, dialog, shell, ipcMain, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs-extra');
+const log = require('./utils/logger');
 const Database = require('./database');
 const MeetingLoader = require('./meeting-loader');
 const AudioRecorder = require('./audio-recorder');
@@ -221,10 +222,18 @@ function createMenu() {
 
 async function initializeApp() {
   try {
+    // Test logger - Log system initialization
+    log.info('[SYSTEM] Application initializing', {
+      version: '1.0.0',
+      platform: process.platform,
+      nodeVersion: process.version,
+      timestamp: Date.now()
+    });
+
     // 🧪 TEST MODE: Override date for testing
     // TO DISABLE: Comment out the line below
     // setupTestDate('2025-07-11'); // Friday, July 11, 2025
-    
+
     // Request microphone permission for audio recording
     if (process.platform === 'darwin') {
       const microphonePermission = systemPreferences.getMediaAccessStatus('microphone');
@@ -703,6 +712,15 @@ ipcMain.handle('delete-meeting-markdown', async (event, meetingId) => {
 // Debug logging handler
 ipcMain.handle('log-to-main', async (event, message) => {
   console.log(message);
+});
+
+// IPC bridge for renderer logging (unified logging system)
+ipcMain.on('log', (event, level, message, data) => {
+  if (log[level]) {
+    log[level](message, data);
+  } else {
+    log.info(message, data);
+  }
 });
 
 // Synchronous version for stopping recording on page unload

@@ -3,6 +3,19 @@ const path = require('path');
 const { getLocalDateString } = require('./utils/date-utils');
 const { app } = require('electron');
 const { dateOverride } = require('./date-override');
+const log = require('./utils/logger');
+
+// Error categorization helper for structured logging
+function categorizeError(error) {
+  const message = error.message || '';
+  const code = error.code || '';
+
+  if (message.includes('auth') || message.includes('AUTH') || code === 401 || code === 403) return 'auth';
+  if (message.includes('ENOENT') || code === 'ENOENT') return 'notfound';
+  if (message.includes('quota') || message.includes('QUOTA') || code === 403) return 'quota';
+  if (message.includes('network') || message.includes('NETWORK') || code === 'ECONNREFUSED' || code === 'ETIMEDOUT') return 'network';
+  return 'unknown';
+}
 
 class UploadService {
   constructor(database, googleDriveService, mainWindow) {
@@ -64,12 +77,26 @@ class UploadService {
     for (const uploadItem of pendingUploads) {
       console.log(`📤 Processing upload for meeting ${uploadItem.meeting_id}`);
 
+      // Extract pipelineId from queue item (stored when queued from renderer)
+      const pipelineId = uploadItem.pipeline_id || `pipeline-${uploadItem.meeting_id}-${Date.now()}`;
+      const t5 = Date.now();
+
+      // T5: Queue processing started
+      log.info('[PIPELINE] Queue processing started', {
+        meetingId: uploadItem.meeting_id,
+        pipelineId,
+        stage: 'T5-queue-processing',
+        timestamp: t5,
+        queueWaitTime: uploadItem.created_at ? Date.now() - new Date(uploadItem.created_at).getTime() : null,
+        attempt: uploadItem.attempts + 1
+      });
+
       try {
         // Update queue status to processing
         await this.database.updateUploadQueueStatus(uploadItem.meeting_id, 'processing');
         
-        // Upload the meeting
-        await this.uploadMeeting(uploadItem.meeting_id);
+        // Upload the meeting (pass pipelineId for logging)
+        await this.uploadMeeting(uploadItem.meeting_id, pipelineId, t5);
         
         // Mark as completed in queue
         await this.database.updateUploadQueueStatus(uploadItem.meeting_id, 'completed');
@@ -118,9 +145,14 @@ class UploadService {
     }
   }
 
-  async uploadMeeting(meetingId) {
+  async uploadMeeting(meetingId, pipelineId, t5) {
     try {
       console.log(`🚀 Starting upload for meeting ${meetingId}`);
+
+      // Default pipelineId if not provided
+      if (!pipelineId) {
+        pipelineId = `pipeline-${meetingId}-${Date.now()}`;
+      }
 
       await this.database.setMeetingUploadStatus(meetingId, 'uploading');
       this.notifyUploadStatusChange(meetingId, 'uploading');
@@ -134,6 +166,18 @@ class UploadService {
 
       // Enhanced content validation
       const validation = await this.validateMeetingContent(meetingId, meeting);
+
+      // T6: Content validated
+      const t6 = Date.now();
+      log.info('[PIPELINE] Content validated', {
+        meetingId,
+        pipelineId,
+        stage: 'T6-content-validated',
+        timestamp: t6,
+        notesFound: validation.notes.length,
+        recordingsFound: validation.recordings.length,
+        issues: validation.issues
+      });
 
       if (!validation.hasNotes && !validation.hasRecordings) {
         console.log(`📝 No content to upload for meeting ${meetingId}`);
@@ -159,6 +203,16 @@ class UploadService {
       const dateStr = getLocalDateString(meeting.start_time);
       const meetingFolderId = await this.ensureGoogleDriveFolderStructure(dateStr, meeting.folder_name);
 
+      // T7: Folders created
+      const t7 = Date.now();
+      log.info('[PIPELINE] Google Drive folders created', {
+        meetingId,
+        pipelineId,
+        stage: 'T7-folders-created',
+        timestamp: t7,
+        folderId: meetingFolderId
+      });
+
       const uploadResults = {
         notes: [],
         recordings: [],
@@ -167,37 +221,96 @@ class UploadService {
 
       // Upload notes files
       for (const noteFile of validation.notes) {
+        const uploadStartTime = Date.now();
         try {
           console.log(`⬆️ Uploading note: ${noteFile.name}...`);
+
+          log.info('[UPLOAD] Uploading file', {
+            meetingId,
+            pipelineId,
+            fileName: noteFile.name,
+            filePath: noteFile.path,
+            type: 'markdown',
+            uploadStartTime
+          });
+
           const result = await this.uploadFileToGoogleDrive({
             name: noteFile.name,
             path: noteFile.path,
             type: 'markdown'
           }, meetingFolderId);
+
           uploadResults.notes.push(result);
           console.log(`✅ Uploaded note: ${noteFile.name}`);
+
+          log.info('[UPLOAD] File uploaded successfully', {
+            meetingId,
+            pipelineId,
+            fileName: noteFile.name,
+            driveFileId: result.id,
+            uploadDuration: Date.now() - uploadStartTime
+          });
         } catch (error) {
           console.error(`❌ Failed to upload note ${noteFile.name}:`, error);
           uploadResults.failed.push({ file: noteFile.name, error: error.message, type: 'note' });
+
+          log.error('[UPLOAD] File upload failed', {
+            meetingId,
+            pipelineId,
+            fileName: noteFile.name,
+            error: error.message,
+            errorType: categorizeError(error),
+            uploadDuration: Date.now() - uploadStartTime
+          });
         }
       }
 
       // Upload recording files
       for (const recording of validation.recordings) {
+        const uploadStartTime = Date.now();
         try {
           console.log(`⬆️ Uploading recording: ${recording.name}...`);
           const stats = await fs.stat(recording.path);
+
+          log.info('[UPLOAD] Uploading file', {
+            meetingId,
+            pipelineId,
+            fileName: recording.name,
+            filePath: recording.path,
+            fileSize: stats.size,
+            type: 'audio',
+            uploadStartTime
+          });
+
           const result = await this.uploadFileToGoogleDrive({
             name: recording.name,
             path: recording.path,
             size: stats.size,
             type: 'audio'
           }, meetingFolderId);
+
           uploadResults.recordings.push(result);
           console.log(`✅ Uploaded recording: ${recording.name} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+
+          log.info('[UPLOAD] File uploaded successfully', {
+            meetingId,
+            pipelineId,
+            fileName: recording.name,
+            driveFileId: result.id,
+            uploadDuration: Date.now() - uploadStartTime
+          });
         } catch (error) {
           console.error(`❌ Failed to upload recording ${recording.name}:`, error);
           uploadResults.failed.push({ file: recording.name, error: error.message, type: 'recording' });
+
+          log.error('[UPLOAD] File upload failed', {
+            meetingId,
+            pipelineId,
+            fileName: recording.name,
+            error: error.message,
+            errorType: categorizeError(error),
+            uploadDuration: Date.now() - uploadStartTime
+          });
         }
       }
 
@@ -205,15 +318,59 @@ class UploadService {
       const totalFiles = validation.notes.length + validation.recordings.length;
       const successfulUploads = uploadResults.notes.length + uploadResults.recordings.length;
 
+      // T8: Upload completed
+      const t8 = Date.now();
+
       if (uploadResults.failed.length === 0) {
         await this.database.setMeetingUploadStatus(meetingId, 'completed', meetingFolderId);
         console.log(`🎉 Meeting ${meetingId} upload completed successfully (${successfulUploads}/${totalFiles} files)`);
+
+        log.info('[PIPELINE] Upload completed', {
+          meetingId,
+          pipelineId,
+          stage: 'T8-upload-complete',
+          timestamp: t8,
+          status: 'completed',
+          filesUploaded: successfulUploads,
+          filesFailed: uploadResults.failed.length,
+          totalDuration: t5 ? t8 - t5 : null,
+          breakdown: t5 ? {
+            t6_t5_validate: t6 - t5,
+            t7_t6_folders: t7 - t6,
+            t8_t7_upload: t8 - t7
+          } : null
+        });
       } else if (successfulUploads > 0) {
         await this.database.setMeetingUploadStatus(meetingId, 'partial', meetingFolderId);
         console.log(`⚠️ Meeting ${meetingId} upload partially completed (${successfulUploads}/${totalFiles} files, ${uploadResults.failed.length} failed)`);
+
+        log.warn('[PIPELINE] Upload partially completed', {
+          meetingId,
+          pipelineId,
+          stage: 'T8-upload-complete',
+          timestamp: t8,
+          status: 'partial',
+          filesUploaded: successfulUploads,
+          filesFailed: uploadResults.failed.length,
+          totalDuration: t5 ? t8 - t5 : null,
+          failedFiles: uploadResults.failed.map(f => ({ file: f.file, error: f.error, type: f.type }))
+        });
+
         // Re-queue for retry
         setTimeout(() => this.queueMeetingUpload(meetingId), 30000);
       } else {
+        log.error('[PIPELINE] Upload failed - all files failed', {
+          meetingId,
+          pipelineId,
+          stage: 'T8-upload-complete',
+          timestamp: t8,
+          status: 'failed',
+          filesUploaded: 0,
+          filesFailed: uploadResults.failed.length,
+          totalDuration: t5 ? t8 - t5 : null,
+          failedFiles: uploadResults.failed.map(f => ({ file: f.file, error: f.error, type: f.type }))
+        });
+
         throw new Error(`All uploads failed: ${uploadResults.failed.map(f => f.error).join(', ')}`);
       }
 

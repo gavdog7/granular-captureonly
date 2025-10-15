@@ -29,21 +29,18 @@ log.transports.console.level = 'debug';
 log.transports.file.maxSize = 50 * 1024 * 1024; // 50MB
 
 // Format for structured logging + jq queries
-// Format: [timestamp] [LEVEL] [process] message {json_payload}
-log.transports.file.format = (msg) => {
-  const { data, date, level } = msg;
+// Format: [timestamp] [LEVEL] message {json_payload}
+// Using electron-log's built-in template format for proper handling
+log.transports.file.format = '[{iso}] [{level}] {text}';
 
-  // First arg is the message, second is the structured payload
-  const text = data.shift();
-  const payload = data.length > 0 ? JSON.stringify(data[0]) : '';
-
-  return `[${date.toISOString()}] [${level.toUpperCase()}] ${text} ${payload}`;
-};
-
-// Add process identifier for clarity
+// Add process identifier to messages for file transport
 log.hooks.push((message, transport) => {
   if (transport === log.transports.file) {
-    message.data.unshift(`[${process.type || 'main'}]`);
+    const processType = process.type || 'main';
+    // Prepend process type to the first data element (the message text)
+    if (message.data && message.data.length > 0) {
+      message.data[0] = `[${processType}] ${message.data[0]}`;
+    }
   }
   return message;
 });

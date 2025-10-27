@@ -71,12 +71,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize file size display
     updateFileSizeDisplay(null);
 
+    // Initialize calendar button color
+    await updateCalendarButtonColor();
+    console.log('✅ Calendar button color updated');
+
+    // Check Google Drive auth status
+    await checkGoogleAuthStatus();
+    console.log('✅ Google Drive auth status checked');
+
     // Initialize markdown export manager (temporarily disabled to fix loading issue)
     // if (window.markdownExportManager) {
     //     window.markdownExportManager.initialize(currentMeetingId);
     //     console.log('Markdown export manager initialized');
     // }
-    
+
     // Hide loading overlay
     hideLoadingOverlay();
     console.log('Page initialization complete');
@@ -358,12 +366,30 @@ function initializeEventListeners() {
             // Only hide if user clicked outside the suggestions area
             const activeElement = document.activeElement;
             const suggestionsContainer = document.getElementById('participantSuggestions');
-            
+
             if (!inlineInput.value.trim() && !suggestionsContainer.contains(activeElement)) {
                 hideInlineParticipantInput();
             }
             hideSuggestions();
         }, 200);
+    });
+
+    // Excel upload button
+    const excelUploadBtn = document.getElementById('excel-upload-btn');
+    if (excelUploadBtn) {
+        excelUploadBtn.addEventListener('click', () => uploadExcelFile());
+    }
+
+    // Google Drive auth button
+    const googleAuthBtn = document.getElementById('google-auth-btn');
+    if (googleAuthBtn) {
+        googleAuthBtn.addEventListener('click', () => handleGoogleAuth());
+    }
+
+    // Listen for auth expiration events
+    ipcRenderer.on('google-auth-expired', () => {
+        console.log('Google auth expired - updating button state');
+        updateGoogleAuthButton(false, true);
     });
 }
 
@@ -1592,6 +1618,313 @@ async function handleNavigationBack() {
         // Still navigate even if export fails
         window.location.href = 'index.html';
     }
+}
+
+// ============================================================
+// Calendar Upload and Google Drive Functions
+// ============================================================
+
+async function uploadExcelFile() {
+    try {
+        // Create a file input element
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.xlsx,.xls';
+        fileInput.style.display = 'none';
+
+        // Add event listener for file selection
+        fileInput.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                await processExcelFile(file);
+            }
+            // Clean up
+            document.body.removeChild(fileInput);
+        });
+
+        // Add to DOM and trigger click
+        document.body.appendChild(fileInput);
+        fileInput.click();
+
+    } catch (error) {
+        console.error('Error initiating Excel upload:', error);
+        showError('Failed to open file picker: ' + error.message);
+    }
+}
+
+async function processExcelFile(file) {
+    try {
+        console.log(`Processing Excel file: ${file.name}`);
+        showSuccess(`Processing ${file.name}...`);
+
+        // Send file path to main process
+        const result = await ipcRenderer.invoke('upload-excel-file', file.path);
+
+        if (result.success) {
+            showSuccess('Excel file processed successfully! Meetings updated.');
+            console.log('Excel file processed successfully');
+
+            // Update calendar button to reflect new sync
+            await updateCalendarButtonColor();
+        } else {
+            showError('Failed to process Excel file');
+        }
+
+    } catch (error) {
+        console.error('Error processing Excel file:', error);
+        showError('Failed to process Excel file: ' + error.message);
+    }
+}
+
+async function handleGoogleAuth() {
+    try {
+        // Check current auth status
+        const statusResult = await ipcRenderer.invoke('check-google-auth-status');
+
+        if (statusResult.success && statusResult.isAuthenticated) {
+            // If already connected, offer to disconnect and reconnect
+            const disconnect = confirm('Google Drive is already connected. Would you like to disconnect and reconnect? This may help resolve upload issues.');
+            if (disconnect) {
+                await disconnectGoogleDrive();
+                return;
+            } else {
+                showSuccess('Google Drive is already connected!');
+                updateGoogleAuthButton(true);
+                return;
+            }
+        }
+
+        // Get OAuth URL
+        const urlResult = await ipcRenderer.invoke('get-google-oauth-url');
+
+        if (!urlResult.success) {
+            showError('Failed to initialize Google Drive: ' + urlResult.error);
+            return;
+        }
+
+        // Open OAuth URL in default browser
+        require('electron').shell.openExternal(urlResult.authUrl);
+
+        // Show modal for code input
+        showOAuthModal();
+
+    } catch (error) {
+        console.error('Error handling Google auth:', error);
+        showError('Failed to connect Google Drive: ' + error.message);
+    }
+}
+
+function updateGoogleAuthButton(isAuthenticated, authFailed = false) {
+    const btn = document.getElementById('google-auth-btn');
+    if (!btn) return;
+
+    if (isAuthenticated) {
+        btn.classList.add('authenticated');
+        btn.classList.remove('disconnected', 'auth-failed');
+        btn.title = 'Google Drive connected';
+    } else if (authFailed) {
+        btn.classList.remove('authenticated');
+        btn.classList.add('disconnected', 'auth-failed');
+        btn.title = 'Authentication expired - click to reconnect';
+    } else {
+        btn.classList.remove('authenticated', 'auth-failed');
+        btn.classList.add('disconnected');
+        btn.title = 'Connect Google Drive';
+    }
+}
+
+async function disconnectGoogleDrive() {
+    try {
+        const result = await ipcRenderer.invoke('disconnect-google-drive');
+        if (result.success) {
+            updateGoogleAuthButton(false);
+            showSuccess('Google Drive disconnected. Click the Drive button again to reconnect.');
+        } else {
+            showError('Failed to disconnect Google Drive: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error disconnecting Google Drive:', error);
+        showError('Failed to disconnect Google Drive: ' + error.message);
+    }
+}
+
+async function checkGoogleAuthStatus() {
+    try {
+        const result = await ipcRenderer.invoke('check-google-auth-status');
+        if (result.success) {
+            updateGoogleAuthButton(result.isAuthenticated);
+        }
+    } catch (error) {
+        console.error('Error checking Google auth status:', error);
+    }
+}
+
+function showOAuthModal() {
+    const modal = document.getElementById('oauth-modal');
+    const input = document.getElementById('oauth-code-input');
+    const submitBtn = document.getElementById('oauth-submit-btn');
+    const cancelBtn = document.getElementById('oauth-cancel-btn');
+
+    if (!modal) {
+        console.error('OAuth modal not found');
+        return;
+    }
+
+    modal.style.display = 'flex';
+    input.value = '';
+    input.focus();
+
+    // Handle submit
+    const handleSubmit = async () => {
+        const code = input.value.trim();
+        if (!code) {
+            showError('Please enter the authorization code');
+            return;
+        }
+
+        try {
+            const exchangeResult = await ipcRenderer.invoke('exchange-google-oauth-code', code);
+
+            if (exchangeResult.success) {
+                showSuccess('Google Drive connected successfully!');
+                updateGoogleAuthButton(true);
+                hideOAuthModal();
+            } else {
+                showError('Failed to connect Google Drive: ' + exchangeResult.error);
+            }
+        } catch (error) {
+            showError('Failed to connect Google Drive: ' + error.message);
+        }
+    };
+
+    // Handle cancel
+    const handleCancel = () => {
+        hideOAuthModal();
+    };
+
+    // Event listeners
+    submitBtn.onclick = handleSubmit;
+    cancelBtn.onclick = handleCancel;
+
+    // Enter key to submit
+    input.onkeypress = (e) => {
+        if (e.key === 'Enter') {
+            handleSubmit();
+        }
+    };
+
+    // Escape key to cancel
+    const escapeHandler = (e) => {
+        if (e.key === 'Escape' && modal.style.display === 'flex') {
+            handleCancel();
+        }
+    };
+    document.addEventListener('keydown', escapeHandler);
+
+    // Store handler for cleanup
+    modal._escapeHandler = escapeHandler;
+}
+
+function hideOAuthModal() {
+    const modal = document.getElementById('oauth-modal');
+    if (!modal) return;
+
+    modal.style.display = 'none';
+
+    // Clean up escape key listener
+    if (modal._escapeHandler) {
+        document.removeEventListener('keydown', modal._escapeHandler);
+        modal._escapeHandler = null;
+    }
+}
+
+async function updateCalendarButtonColor() {
+    try {
+        const calendarAgeData = await ipcRenderer.invoke('get-calendar-age');
+        const calendarBtn = document.getElementById('excel-upload-btn');
+
+        if (!calendarBtn) return;
+
+        console.log('🔍 Calendar age data:', calendarAgeData);
+
+        // Clear existing content and classes
+        calendarBtn.innerHTML = '';
+        calendarBtn.classList.remove('stale', 'calendar-stale');
+
+        if (calendarAgeData.type === 'calendar') {
+            // Show calendar icon (current day or no sync data)
+            calendarBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+            `;
+            calendarBtn.style.color = calendarAgeData.color;
+        } else {
+            // Show number with color
+            calendarBtn.innerHTML = `
+                <span style="color: ${calendarAgeData.color}; font-weight: bold; font-size: 14px;">
+                    ${calendarAgeData.days}
+                </span>
+            `;
+        }
+
+        // Update tooltip
+        const tooltipText = calendarAgeData.days === 0
+            ? 'Upload Excel file (calendar synced today)'
+            : `Upload Excel file (last synced ${calendarAgeData.days} day${calendarAgeData.days === 1 ? '' : 's'} ago)`;
+
+        calendarBtn.title = tooltipText;
+
+        // Add visual warning for stale data
+        if (calendarAgeData.isStale) {
+            calendarBtn.classList.add('calendar-stale');
+        }
+
+        console.log(`📅 Calendar button updated: ${calendarAgeData.days} days old, color: ${calendarAgeData.color}`);
+    } catch (error) {
+        console.error('Error updating calendar button color:', error);
+    }
+}
+
+function showError(message) {
+    // Remove any existing messages
+    removeMessages();
+
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.textContent = message;
+
+    // Insert at top of content wrapper
+    const contentWrapper = document.querySelector('.content-wrapper');
+    if (contentWrapper) {
+        contentWrapper.insertBefore(errorDiv, contentWrapper.firstChild);
+    }
+
+    setTimeout(() => errorDiv.remove(), 5000);
+}
+
+function showSuccess(message) {
+    // Remove any existing messages
+    removeMessages();
+
+    const successDiv = document.createElement('div');
+    successDiv.className = 'success-message';
+    successDiv.textContent = message;
+
+    // Insert at top of content wrapper
+    const contentWrapper = document.querySelector('.content-wrapper');
+    if (contentWrapper) {
+        contentWrapper.insertBefore(successDiv, contentWrapper.firstChild);
+    }
+
+    setTimeout(() => successDiv.remove(), 3000);
+}
+
+function removeMessages() {
+    document.querySelectorAll('.error-message, .success-message').forEach(msg => msg.remove());
 }
 
 // Make functions available globally

@@ -12,7 +12,27 @@
     <div class="container">
         <header class="header">
             <button id="backButton" class="back-arrow"><img src="assets/perfectarrow.png" alt="Back" /></button>
-            
+
+            <div class="header-actions">
+                <button class="excel-upload-btn" id="excel-upload-btn" title="Upload Excel file">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                </button>
+                <button class="google-auth-btn" id="google-auth-btn" title="Connect Google Drive">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14,2 14,8 20,8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10,9 9,9 8,9"></polyline>
+                    </svg>
+                </button>
+            </div>
+
             <div class="status-indicators">
                 <span id="fileSizeIndicator" class="file-size-indicator">--</span>
                 <div id="saveIndicator" class="status-indicator" title="Save Status">
@@ -61,6 +81,19 @@
         <div class="loading-overlay" id="loadingOverlay">
             <div class="loading-spinner"></div>
             <div class="loading-text">Loading meeting notes...</div>
+        </div>
+    </div>
+
+    <!-- OAuth Code Input Modal -->
+    <div id="oauth-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%;">
+            <h3 style="margin-top: 0; color: #333;">Connect Google Drive</h3>
+            <p style="color: #666; margin: 15px 0;">After authorizing in your browser, copy the authorization code and paste it below:</p>
+            <input type="text" id="oauth-code-input" placeholder="Paste authorization code here..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin: 15px 0; font-family: monospace;">
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button id="oauth-cancel-btn" style="padding: 8px 16px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">Cancel</button>
+                <button id="oauth-submit-btn" style="padding: 8px 16px; background: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer;">Connect</button>
+            </div>
         </div>
     </div>
 

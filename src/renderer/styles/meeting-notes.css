@@ -714,6 +714,146 @@ body {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Header Actions - Excel Upload and Google Drive Buttons */
+.header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    -webkit-app-region: no-drag;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.excel-upload-btn {
+    background: transparent;
+    border: 1px solid #ccc;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 28px;
+}
+
+.excel-upload-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.excel-upload-btn:hover {
+    border-color: #999;
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.excel-upload-btn:focus {
+    outline: 2px solid #8b5cf6;
+    outline-offset: 2px;
+}
+
+.excel-upload-btn.stale {
+    border-color: #f97316;
+    color: #f97316;
+}
+
+.excel-upload-btn.stale:hover {
+    border-color: #ea580c;
+    background: rgba(249, 115, 22, 0.05);
+    color: #ea580c;
+}
+
+.excel-upload-btn.calendar-stale {
+    background-color: rgba(255, 0, 0, 0.1);
+    border-color: rgba(255, 0, 0, 0.3);
+}
+
+.excel-upload-btn.calendar-stale:hover {
+    background-color: rgba(255, 0, 0, 0.15);
+    border-color: rgba(255, 0, 0, 0.5);
+}
+
+.google-auth-btn {
+    background: transparent;
+    border: 1px solid #ccc;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 28px;
+    font-size: 12px;
+}
+
+.google-auth-btn:hover {
+    border-color: #999;
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.google-auth-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.google-auth-btn.disconnected {
+    border-color: #ffb3ba;
+    color: #ffb3ba;
+}
+
+.google-auth-btn.auth-failed {
+    border-color: #ff4444;
+    color: #ff4444;
+    animation: pulse-red 2s ease-in-out infinite;
+}
+
+.google-auth-btn.auth-failed:hover {
+    border-color: #ff6666;
+    background: rgba(255, 68, 68, 0.1);
+}
+
+@keyframes pulse-red {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.google-auth-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.google-auth-btn:focus {
+    outline: 2px solid #8b5cf6;
+    outline-offset: 2px;
+}
+
+/* Error and Success Messages */
+.error-message {
+    background: #fee;
+    color: #c33;
+    padding: 12px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 14px;
+    border-left: 3px solid #e88;
+}
+
+.success-message {
+    background: #efe;
+    color: #363;
+    padding: 12px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 14px;
+    border-left: 3px solid #8e8;
+}
+
 /* Focus Styles */
 .back-arrow:focus {
     outline: none;
